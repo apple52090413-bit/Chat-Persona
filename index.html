@@ -395,6 +395,10 @@
   .loading-sub{ font-size:11.5px; color:var(--ink-dim); margin-top:4px; }
   .loading-bar{ width:70%; height:3px; margin:16px auto 0; background:rgba(120,95,170,0.12); border-radius:3px; overflow:hidden; }
   .loading-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg, var(--gold), var(--gold-soft)); transition:width .35s linear; }
+  .loading-error{ display:none; margin-top:20px; text-align:center; }
+  .loading-error.show{ display:block; }
+  .loading-error-text{ font-size:12.5px; color:#c0392b; margin-bottom:12px; line-height:1.6; padding:0 8px; }
+  .loading-error .btn{ margin:4px 6px; padding:10px 18px; font-size:13px; }
 
   /* ---------- Reveal / Result ---------- */
   .reveal-scroll{ overflow-y:auto; height:100%; padding-bottom:10px; scrollbar-width:none; }
@@ -934,6 +938,11 @@
       <p class="loading-text" id="loadingText">正在洗牌，讀取你的言語頻率...</p>
       <p class="loading-sub" id="loadingSub"></p>
       <div class="loading-bar"><div class="loading-bar-fill" id="loadingFill"></div></div>
+      <div class="loading-error" id="loadingError">
+        <p class="loading-error-text" id="loadingErrorText"></p>
+        <button type="button" class="btn btn-primary" onclick="retryLoading()">重試一次</button>
+        <button type="button" class="btn btn-ghost" onclick="restart()">返回首頁</button>
+      </div>
     </div>
   </section>
 
@@ -1447,12 +1456,59 @@
     });
   });
 
+  // ---------- 後端 API 設定 ----------
+  // 部署好 worker/ 底下的 Cloudflare Worker 後（見 worker/README.md），
+  // 把下面這行換成你的 Worker 網址，例如：
+  // const API_BASE = 'https://chat-persona-api.your-subdomain.workers.dev';
+  const API_BASE = '';
+
+  async function callApi(path, payload){
+    if(!API_BASE){
+      const err = new Error('尚未設定後端 API 網址，請參考 worker/README.md 部署 Cloudflare Worker，並把網址填進 index.html 的 API_BASE。');
+      throw err;
+    }
+    let res;
+    try{
+      res = await fetch(API_BASE + path, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch(networkErr){
+      throw new Error('連不到分析伺服器，請確認網路連線或 API_BASE 網址是否正確。');
+    }
+    let data = {};
+    try{ data = await res.json(); } catch{ /* 非 JSON 回應時 data 保持空物件 */ }
+    if(!res.ok){
+      throw new Error(data.error || ('伺服器錯誤（'+res.status+'）'));
+    }
+    return data;
+  }
+
+  function fileToBase64(file){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = ()=> resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = ()=> reject(new Error('圖片讀取失敗'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function collectImagePayload(){
+    return Promise.all(uploadedImages.map(async img=>({
+      mediaType: img.file.type || 'image/png',
+      data: await fileToBase64(img.file),
+    })));
+  }
+
   // ---------- 上傳方式 ----------
   let selectedMethod = null;
   let hasInput = false;
   let paidMode = false;
   let uploadedChatText = null;
   let uploadedImages = [];
+  let lastPersonaResult = null;
+  let lastRelationshipDraft = null;
   const MAX_FILE_BYTES = 5 * 1024 * 1024;
   const MAX_IMAGES = 8;
 
@@ -1596,35 +1652,59 @@
   const loadingMessages = ['正在洗牌，讀取你的言語頻率...','正在計算已讀速度與句尾語氣...','正在比對用字習慣與情緒溫度...','快好了，牌卡正在成形...'];
   const loadingMessagesPaid = ['正在比對你們兩人的對話節奏...','正在計算溫度與主導權分布...','正在交叉分析關係模式...','快整理好幾個想確認的問題了...'];
   const loadingMessagesFinal = ['正在根據你的回答重新校準分析...','正在整合你補充的重要時刻...','正在生成完整關係報告...'];
-  function runLoading(){
+  async function runLoading(){
     const textEl = document.getElementById('loadingText');
     const subEl = document.getElementById('loadingSub');
     const fill = document.getElementById('loadingFill');
+    const errEl = document.getElementById('loadingError');
+    errEl.classList.remove('show');
     subEl.textContent = '';
     let messages = loadingMessages;
     if(paidMode) messages = (loadingPhase==='final') ? loadingMessagesFinal : loadingMessagesPaid;
-    let step = 0; fill.style.width='0%'; textEl.textContent = messages[0];
+    let step = 0; fill.style.width='6%'; textEl.textContent = messages[0];
     const total = messages.length;
-    const interval = setInterval(()=>{
-      step++;
-      fill.style.width = Math.min(100,(step/total)*100)+'%';
-      if(step < total){ textEl.textContent = messages[step]; }
-      else{
-        clearInterval(interval);
-        setTimeout(()=>{
-          if(paidMode){
-            if(loadingPhase==='initial'){
-              prepareAiQuestions(); goTo('aiAsk');
-            } else {
-              goTo('relResult'); prepareRelationshipResult();
-            }
-          } else {
-            goTo('reveal'); prepareCard();
-          }
-        }, 400);
+    // 這段動畫只是視覺安撫效果，真正的分析結果要等下面 API 呼叫回來才會顯示。
+    const cycle = setInterval(()=>{
+      step = Math.min(step+1, total-1);
+      fill.style.width = Math.min(92,6+(step/(total-1))*86)+'%';
+      textEl.textContent = messages[step];
+    }, 900);
+
+    try{
+      if(!paidMode){
+        const images = await collectImagePayload();
+        const result = await callApi('/analyze-persona', { text: uploadedChatText, images });
+        lastPersonaResult = result;
+        clearInterval(cycle);
+        fill.style.width = '100%';
+        setTimeout(()=>{ goTo('reveal'); prepareCard(); }, 300);
+      } else if(loadingPhase==='initial'){
+        const images = await collectImagePayload();
+        const result = await callApi('/analyze-relationship', {
+          text: uploadedChatText,
+          images,
+          relationshipType: selectedRelationship || '曖昧',
+          milestones: userMilestones,
+        });
+        lastRelationshipDraft = result;
+        clearInterval(cycle);
+        fill.style.width = '100%';
+        setTimeout(()=>{ prepareAiQuestions(); goTo('aiAsk'); }, 300);
+      } else {
+        const refined = await callApi('/refine-relationship', { draft: lastRelationshipDraft, answers: aiAnswers });
+        lastRelationshipDraft = Object.assign({}, lastRelationshipDraft, refined);
+        clearInterval(cycle);
+        fill.style.width = '100%';
+        setTimeout(()=>{ goTo('relResult'); prepareRelationshipResult(); }, 300);
       }
-    }, 650);
+    } catch(err){
+      clearInterval(cycle);
+      document.getElementById('loadingErrorText').textContent = (err && err.message) || '分析失敗，請稍後再試一次。';
+      errEl.classList.add('show');
+    }
   }
+
+  function retryLoading(){ runLoading(); }
 
   // ---------- AI 主動提問（付費版，報告產出前）----------
   const aiQuestionsByType = {
@@ -1634,17 +1714,19 @@
     '家人': ['生活習慣的碎念摩擦，通常具體是哪些事情？','對方的關心，什麼時候會讓你覺得是「愛」，什麼時候會覺得是「壓力」？'],
     '同事': ['分工認知落差那次，後來實際上是怎麼解決的？','你們除了工作，有沒有聊過一點點私人的事？'],
   };
+  let currentAiQuestions = [];
   function prepareAiQuestions(){
     const relKey = (selectedRelationship && aiQuestionsByType[selectedRelationship]) ? selectedRelationship : '曖昧';
-    const qs = aiQuestionsByType[relKey];
-    document.getElementById('aiAskList').innerHTML = qs.map((q,i)=>
+    const fromApi = lastRelationshipDraft && Array.isArray(lastRelationshipDraft.followUpQuestions) && lastRelationshipDraft.followUpQuestions.length
+      ? lastRelationshipDraft.followUpQuestions : null;
+    currentAiQuestions = fromApi || aiQuestionsByType[relKey];
+    document.getElementById('aiAskList').innerHTML = currentAiQuestions.map((q,i)=>
       '<div class="ai-ask-item"><div class="ai-ask-q"><span class="ai-ask-q-mark">✦</span><span>'+q+'</span></div>'+
       '<textarea id="aiAskAns'+i+'" placeholder="可以先跳過，之後也能再補充..."></textarea></div>'
     ).join('');
   }
   function submitAiAnswers(){
-    const relKey = (selectedRelationship && aiQuestionsByType[selectedRelationship]) ? selectedRelationship : '曖昧';
-    const qs = aiQuestionsByType[relKey];
+    const qs = currentAiQuestions.length ? currentAiQuestions : (aiQuestionsByType[selectedRelationship] || aiQuestionsByType['曖昧']);
     aiAnswers = qs.map((q,i)=>{
       const el = document.getElementById('aiAskAns'+i);
       return { question:q, answer: el && el.value.trim() ? el.value.trim() : null };
@@ -1653,108 +1735,17 @@
     goTo('loading');
   }
 
+  const relScoreLabels = { '曖昧':'有戲指數', '伴侶':'關係穩定度', '朋友':'友誼濃度', '家人':'情感連結度', '同事':'合作默契度' };
+  let currentTimelineEvents = [];
+
   function prepareRelationshipResult(){
-    const relDeep = {
-      '曖昧': {
-        badge:'關係類型：曖昧', scoreLabel:'有戲指數',
-        personA:{ code:'直球型', name:'你', traits:['主動找話題','已讀秒回','愛用問句'],
-          desc:'你在對話中常常主動拋出新話題，遇到冷場會用問句延續，顯示你很在意這段互動有沒有持續下去。' },
-        personB:{ code:'幽默型', name:'對方', traits:['慢熱','愛開玩笑','已讀常拖延'],
-          desc:'對方回覆速度不算快，但一開口常帶點玩笑語氣，像是在用幽默感試探彼此的熟悉程度，而不是冷淡。' },
-        conflictFreq:'0.8', conflictUnit:'次意見不合／月',
-        conflictTags:[['已讀不回',5],['話題突然中斷',3],['關係定義不明確',2]],
-        conflictDesc:'衝突多半發生在你主動釋出好感、但對方回應曖昧不明的時候，容易讓你的不確定感升高，進而傳更多訊息求確認。',
-        stickerA:{positive:62,neutral:28,negative:10}, stickerB:{positive:48,neutral:40,negative:12},
-        timeline:[
-          ['第1個月','開始密集聊天，訊息量明顯上升','從偶爾聊天變成每天早晚都有訊息，話題從打招呼延伸到分享日常小事。','雙方都在用「增加互動頻率」測試對方的興趣程度，這階段的熱絡通常代表彼此都對關係抱有期待。','後續兩週互動量持續攀升，成為關係升溫的起點。'],
-          ['第2個月','第一次單獨出去，話題變得更私人','約出去之後，訊息內容從日常瑣事轉為聊價值觀、過去經驗這類更深入的話題。','願意聊更私人的事，代表對方開始把你放進「可以信任」的名單裡，這是關係推進的訊號。','私人話題的比例在這之後持續維持高檔，沒有再退回表面閒聊。'],
-          ['第4個月','出現一次已讀不回超過 24 小時的低潮期','你連續傳了幾則訊息追問，對方隔了一天才簡短回覆「最近有點忙」。','已讀不回本身不一定代表降溫，但你回應的方式（連續追問）透露出你把這件事解讀得比對方原意更嚴重。','低潮期過後互動量回升，但你之後傳訊息的間隔明顯拉長，像是在自我保護。'],
-          ['第5個月','關係回溫，開始互稱曖昧限定的暱稱','雙方開始用只有彼此才懂的稱呼互動，訊息裡的表情符號與甜度用詞明顯增加。','專屬稱呼是關係「被雙方默認」的訊號，代表這段曖昧已經有了某種共識，即使沒有明講。','此後的對話基調維持在較高溫度，直到本次分析。'],
-          ['本次分析','互動頻率創新高，但關係狀態仍未明朗','訊息量達到分析期間的高峰，但雙方都還沒有出現明確定義關係的字眼。','熱度夠高、但沒有人開口定義，通常代表雙方都在等對方先跨出那一步。','建議關注接下來 1-2 個月是否有人主動挑明關係，這往往是曖昧期的關鍵轉折點。'],
-        ],
-        personalInsight:'在這段曖昧關係中，你習慣用「主動」來降低不安全感——每次對方回應變慢，你會傳更多訊息去確認關係，而不是等待。這種模式短期能維持熱度，但長期可能讓你在情感上消耗更多。',
-        overallInsight:'你們的訊息間隔平均在 20 分鐘內互相回應，且雙方都主動拋出新話題——這種節奏在曖昧期不算常見，通常代表雙方都還想繼續聊下去。' },
-      '伴侶': {
-        badge:'關係類型：伴侶', scoreLabel:'關係穩定度',
-        personA:{ code:'穩定型', name:'你', traits:['準時回覆','情緒平穩','習慣先道歉'],
-          desc:'你的語氣起伏很小，吵架時通常是先軟化氣氛的那一方，顯示你把關係的平穩看得比「爭對錯」更重要。' },
-        personB:{ code:'直球型', name:'對方', traits:['講話直接','壓力下易急躁','秒讀秒回'],
-          desc:'對方在意見不合時傾向直接說出不滿，不太留白，短期看起來衝，但也代表對方很少把情緒悶著不說。' },
-        conflictFreq:'1.2', conflictUnit:'次爭吵／月',
-        conflictTags:[['行程安排',6],['金錢觀念',4],['家務分配',3],['誰該先道歉',3]],
-        conflictDesc:'衝突高峰多落在週末計畫前後，主因是雙方對「事先講好」的認知不同——你偏好提前規劃，對方偏好隨性決定，這個落差是重複出現的根源，而不是單一事件。',
-        stickerA:{positive:55,neutral:35,negative:10}, stickerB:{positive:40,neutral:38,negative:22},
-        timeline:[
-          ['第1個月','交往初期蜜月期，訊息量與甜度雙高','幾乎每個小時都有訊息往來，內容以分享心情與互相關心為主。','蜜月期的高頻互動是關係初期的正常現象，雙方都在積極投入建立連結。','高頻互動維持約一個月後，逐漸回落到較穩定的日常節奏。'],
-          ['第2個月','第一次為了行程安排起爭執','你想提前規劃週末行程，對方傾向臨時決定，雙方在訊息裡出現語氣變硬的來回。','這不是單一事件，是「規劃型」跟「隨性型」兩種生活習慣第一次正面碰撞，之後會重複出現。','當天晚上由你先傳訊息緩和氣氛，隔天恢復正常互動。'],
-          ['第3個月','磨合期，衝突頻率達到高峰','這個月的爭執次數是分析期間最高的一個月，主題橫跨行程、金錢、家務。','磨合期的衝突頻繁是關係從「表現最好的自己」過渡到「真實日常」的必經過程，不代表關係變差。','衝突後雙方都沒有選擇冷戰，顯示雖然吵得多，但都還在乎這段關係。'],
-          ['第4個月','開始出現「先道歉」的固定模式','幾次爭執後，你開始固定在對話中先釋出軟化訊號，對方則會跟著降溫。','這個模式的形成代表雙方找到了衝突後的默契收尾方式，是關係走向穩定的正面訊號。','此後的爭執平均在同一天內就能化解，不再拖過夜。'],
-          ['第5個月','衝突頻率下降，溫度回穩','爭執次數明顯減少，訊息裡的甜度用詞與日常分享比例回升。','雙方已經摸清彼此在意的點，開始主動避開容易起爭執的溝通方式。','溫度回穩的狀態持續到本次分析，僅金錢話題偶爾還有摩擦。'],
-          ['本次分析','關係進入穩定期，但金錢話題仍偶有摩擦','整體對話基調平穩，僅在提到共同花費時偶爾出現意見不同。','金錢觀念的落差通常需要更明確的溝通機制（例如共同記帳）才能真正解決，光靠磨合可能不夠。','建議關注金錢話題是否會在未來重新升溫成主要衝突點。'],
-        ],
-        personalInsight:'你在關係中常扮演「先低頭」的角色——不是因為你總是理虧，而是你把維持和諧的優先順序排得比堅持立場更高。這讓衝突不會擴大，但長期下來，你可能也在累積一些沒說出口的委屈。',
-        overallInsight:'溫度分數在最近兩次分析持平，代表關係進入穩定期；主導權分布接近五五分，顯示這是一段互相配合、沒有明顯一方在遷就的關係。' },
-      '朋友': {
-        badge:'關係類型：朋友', scoreLabel:'友誼濃度',
-        personA:{ code:'傾聽型', name:'你', traits:['擅長接話','記得小細節','主動關心'],
-          desc:'你很常記得對方隨口提過的小事，並在之後主動問起，這種細膩的關心是這段友誼維持溫度的關鍵。' },
-        personB:{ code:'創意型', name:'對方', traits:['話題跳躍','很少已讀不回','愛傳迷因'],
-          desc:'對方的訊息常常從一個話題跳到完全不相關的另一個，但幾乎不會已讀不回，顯示對方其實很重視這段關係的即時互動。' },
-        conflictFreq:'0.2', conflictUnit:'次冷戰／月',
-        conflictTags:[['約時間喬不攏',4],['開玩笑過頭',2]],
-        conflictDesc:'少數的摩擦多半是「開玩笑尺度」引起的小誤會，通常在同一天內就會有一方主動用哏化解，沒有真正演變成冷戰。',
-        stickerA:{positive:70,neutral:24,negative:6}, stickerB:{positive:66,neutral:28,negative:6},
-        timeline:[
-          ['半年前','聊天頻率一度降到每週不到 5 則','雙方訊息量明顯下滑，多半只剩下轉發迷因或簡短回應。','聊天量下降不一定代表友誼變淡，更常見的原因是雙方當時各自生活忙碌，重心暫時移開。','斷聯狀態持續了約兩個月，期間沒有出現任何不愉快的對話。'],
-          ['4個月前','重新聯絡，聊了一次很長的近況','其中一方主動傳訊息問近況，對話一路從簡短問候聊成長篇分享。','願意花時間補上這段空白，代表雙方都把這段友誼放在「值得花時間維護」的名單上。','這次長聊之後，聊天頻率明顯回升，沒有再次降到之前的低點。'],
-          ['2個月前','一起出去一次，話題明顯變多','線下見面後，接下來幾天的訊息量與話題廣度都比平常高出許多。','實體互動往往能重新激活友誼的熱度，這種「見面後熱度上升」的模式值得留意並多安排。','熱度在見面後持續了約兩週才回到平常水準，但整體基準線比之前更高。'],
-          ['本次分析','即使中間斷聯過，重新聯絡後熱度幾乎沒掉','整體語氣熱度與見面前相比沒有明顯落差，顯示友誼底子穩固。','這段友誼具備「禁得起空白」的特質，代表彼此的信任不依賴頻繁互動來維持。','建議不用因為偶爾斷聯而焦慮，這段關係的韌性已經被驗證過。'],
-        ],
-        personalInsight:'你在這段友誼裡是「記憶保管者」的角色——即使對方話題常跳來跳去，你總能接住並記得，這種穩定的關注是讓這段關係不容易散掉的原因。',
-        overallInsight:'即使中間有一段時間訊息變少，重新聯絡後的語氣熱度幾乎沒有下降，顯示這段友誼禁得起「已讀很久才回」這種考驗。' },
-      '家人': {
-        badge:'關係類型：家人', scoreLabel:'情感連結度',
-        personA:{ code:'穩定型', name:'你', traits:['報備行程','用詞含蓄','很少主動撒嬌'],
-          desc:'你習慣用「到家了」「吃飽了」這類日常回報來維持連結，情緒很少直接說出口，但關心藏在這些瑣碎訊息裡。' },
-        personB:{ code:'傾聽型', name:'對方', traits:['常確認狀態','語氣關心','偶爾碎念'],
-          desc:'對方的訊息大多圍繞在確認你的狀態，偶爾出現的碎念其實是關心的另一種表達方式，而不是單純的嘮叨。' },
-        conflictFreq:'0.5', conflictUnit:'次意見不合／月',
-        conflictTags:[['生活習慣',3],['過度關心的界線',2]],
-        conflictDesc:'摩擦多發生在「關心」被感覺成「管太多」的時候，本質上不是感情問題，是表達方式跟界線認知的落差。',
-        stickerA:{positive:50,neutral:44,negative:6}, stickerB:{positive:58,neutral:36,negative:6},
-        timeline:[
-          ['半年前','固定每週回報行程的習慣開始建立','出現規律的「到家了」「吃飽了」這類報備訊息，頻率大約每週固定幾次。','這種主動報備的習慣，是含蓄表達關心與安全感的方式，即使沒有明說「我在乎你」。','這個習慣一直維持到本次分析，成為雙方溝通的固定基調。'],
-          ['3個月前','一次關於生活習慣的碎念引起小摩擦','對方針對你的作息提出意見，你的回覆語氣明顯變短，出現輕微的抗拒感。','這類摩擦的根源通常是「關心」跟「介入界線」之間的分寸拿捏，不是感情本身出了問題。','摩擦沒有延續超過一天，隔天雙方就恢復平常的互動模式。'],
-          ['1個月前','摩擦後訊息量不減反增，顯示很快就和好','小摩擦後，接下來幾天的報備訊息反而比平常更頻繁。','用「更主動聯絡」而不是冷處理來回應摩擦，顯示雙方都下意識想確認關係沒有受影響。','這個模式強化了彼此的安全感，此後類似的小摩擦影響力都明顯變小。'],
-          ['本次分析','關心與確認式訊息佔比持續偏高，關係穩定','日常報備與關心確認類訊息，占整體對話的比例持續維持在高檔。','這是家人關係裡典型的穩定訊號——不靠深度對話，而是靠持續的日常在場感來維繫連結。','建議偶爾可以多一點直接的情感表達，讓含蓄的關心也能被更清楚地感受到。'],
-        ],
-        personalInsight:'你表達在意的方式很少是直接說「我想你」，而是透過持續回報生活細節——這是含蓄但穩定的依附方式，對方其實接收得到，只是彼此都沒有明講。',
-        overallInsight:'對話大多圍繞在日常瑣事與關心確認，情緒表達佔比不高，但這正是許多家人之間表達在意的方式——藏在瑣碎裡，而不是說出口。' },
-      '同事': {
-        badge:'關係類型：同事', scoreLabel:'合作默契度',
-        personA:{ code:'理性型', name:'你', traits:['條理清楚','公事公辦','準時回覆'],
-          desc:'你的訊息大多結構完整、重點清楚，很少閒聊，顯示你把這段對話單純定位在工作效率上。' },
-        personB:{ code:'直球型', name:'對方', traits:['反應快','偶爾情緒外露','喜歡直接講重點'],
-          desc:'對方在意見不同時會直接表達，不太拐彎，這種直接在時間壓力大的合作場合裡反而能加快決策速度。' },
-        conflictFreq:'0.6', conflictUnit:'次意見分歧／月',
-        conflictTags:[['分工不清楚',4],['deadline 認知落差',3]],
-        conflictDesc:'分歧多發生在專案交接前後，根源是雙方對「誰該做到什麼程度」沒有事先講清楚，屬於流程問題，不是私人恩怨。',
-        stickerA:{positive:35,neutral:55,negative:10}, stickerB:{positive:42,neutral:48,negative:10},
-        timeline:[
-          ['半年前','開始合作第一個專案，訊息以工作事項為主','初期對話幾乎全是任務指派、進度確認，鮮少閒聊。','這是典型的「先建立工作信任、再談交情」模式，效率導向的合作關係初期常見。','工作型對話比例在整個分析期間都維持在高檔，沒有明顯變化。'],
-          ['4個月前','一次分工認知落差，導致進度延遲','雙方對「誰該完成到什麼程度」有不同理解，訊息裡出現多次確認與略顯緊繃的語氣。','這類分歧的根源是流程沒講清楚，不是能力或意願問題，釐清分工機制就能預防再發生。','事件後兩人開始更頻繁地互相確認進度，作為預防機制。'],
-          ['2個月前','開始固定同步進度，摩擦明顯減少','雙方建立起固定的進度同步習慣，訊息裡的確認頻率提高，但語氣更平順。','建立固定溝通機制後，原本容易產生的認知落差被提前化解，這是合作關係成熟的表現。','此後未再出現類似延遲，合作效率明顯提升。'],
-          ['本次分析','溝通效率提升，工作型對話佔比持續偏高','訊息簡潔、重點明確的比例提高，來回確認的次數減少。','這代表雙方已經培養出高效的合作默契，彼此都清楚對方的溝通習慣。','建議如果想讓合作關係更長久，可以偶爾加入一些非工作性質的交流，累積私人信任。'],
-        ],
-        personalInsight:'你在合作中傾向把話講清楚、白紙黑字，這在需要效率的場合是優勢，但也代表你比較少在對話中順帶建立私人交情——這是效率跟關係溫度之間的取捨，沒有對錯，但值得意識到。',
-        overallInsight:'訊息集中在特定時段（多為上班時間），話題聚焦在工作事項，顯示這是一段界線清楚、效率導向的合作關係。' },
-    };
+    const d = lastRelationshipDraft;
+    if(!d) return;
+    const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
+    const scoreLabel = relScoreLabels[relKey];
+    document.getElementById('relTypeBadge').textContent = '關係類型：'+relKey;
 
-    const relKey = (selectedRelationship && relDeep[selectedRelationship]) ? selectedRelationship : '曖昧';
-    const d = relDeep[relKey];
-    document.getElementById('relTypeBadge').textContent = d.badge;
-
-    // ---- 雙人個性側寫 ----
+    // ---- 雙人個性側寫（頭像插畫沿用免費版六型的插畫，文字描述來自 AI）----
     let idxA = Math.floor(Math.random()*personas.length);
     let idxB;
     do { idxB = Math.floor(Math.random()*personas.length); } while(idxB===idxA);
@@ -1768,12 +1759,13 @@
         '</div></div>';
     }
     document.getElementById('profileCards').innerHTML =
-      profileCard(personas[idxA], d.personA) + profileCard(personas[idxB], d.personB);
+      profileCard(personas[idxA], { name:'你', code:d.personA.code, traits:d.personA.traits, desc:d.personA.description }) +
+      profileCard(personas[idxB], { name:'對方', code:d.personB.code, traits:d.personB.traits, desc:d.personB.description });
 
     // ---- 核心分數 ----
-    const chemScore = 55 + Math.floor(Math.random()*36);
-    document.getElementById('chemLabel').textContent = d.scoreLabel;
-    const totalMsgs = 1800 + Math.floor(Math.random()*3200);
+    const chemScore = Math.max(0, Math.min(100, Math.round(d.chemistryScore)));
+    document.getElementById('chemLabel').textContent = scoreLabel;
+    const totalMsgs = d.totalMessages || 0;
     document.getElementById('relBasisStat').innerHTML = '本次分析基礎：<b>'+totalMsgs.toLocaleString()+'</b> 則訊息 · 關係類型：'+relKey;
 
     const circumference = 364.4;
@@ -1800,30 +1792,24 @@
 
     // ---- 衝突頻率與問題點 ----
     document.getElementById('conflictBox').innerHTML =
-      '<div class="conflict-freq">平均 <b>'+d.conflictFreq+'</b> '+d.conflictUnit+'</div>'+
-      '<div class="conflict-tags">'+d.conflictTags.map(([t,c])=>'<span class="conflict-tag">'+t+'<b>×'+c+'</b></span>').join('')+'</div>'+
-      '<p class="conflict-desc">'+d.conflictDesc+'</p>';
+      '<div class="conflict-freq">平均 <b>'+d.conflict.frequency+'</b> '+d.conflict.unit+'</div>'+
+      '<div class="conflict-tags">'+d.conflict.tags.map(t=>'<span class="conflict-tag">'+t.label+'<b>×'+t.count+'</b></span>').join('')+'</div>'+
+      '<p class="conflict-desc">'+d.conflict.description+'</p>';
 
     // ---- 互動指標對比 ----
-    const splitMetrics = [
-      ['主動聊天佔比', 30+Math.floor(Math.random()*41)],
-      ['情緒表達佔比', 30+Math.floor(Math.random()*41)],
-      ['已讀回覆速度', 30+Math.floor(Math.random()*41)],
-      ['話題延續佔比', 30+Math.floor(Math.random()*41)],
-    ];
-    document.getElementById('splitList').innerHTML = splitMetrics.map(([label,pctA])=>{
+    document.getElementById('splitList').innerHTML = d.interactionSplit.map(m=>{
+      const pctA = Math.max(0, Math.min(100, Math.round(m.userPct)));
       const pctB = 100-pctA;
       return '<div class="split-item">'+
-        '<div class="split-label-row"><span>'+label+'</span></div>'+
+        '<div class="split-label-row"><span>'+m.label+'</span></div>'+
         '<div class="split-bar"><div class="split-fill-a" style="width:'+pctA+'%"></div><div class="split-fill-b" style="width:'+pctB+'%"></div></div>'+
         '<div class="split-pct-row"><span>你 '+pctA+'%</span><span>對方 '+pctB+'%</span></div>'+
         '</div>';
     }).join('');
 
-    // ---- 高頻字詞（借用其中一個免費版人格的詞頻資料當示範）----
-    const kwSample = personas[Math.floor(Math.random()*personas.length)].keywords;
-    document.getElementById('relKeywords').innerHTML = kwSample.map(([w,c])=>
-      '<div class="kw-chip"><span class="kw-word">'+w+'</span><span class="kw-count">×'+c+'</span></div>'
+    // ---- 高頻字詞 ----
+    document.getElementById('relKeywords').innerHTML = (d.keywords||[]).map(k=>
+      '<div class="kw-chip"><span class="kw-word">'+k.word+'</span><span class="kw-count">×'+k.count+'</span></div>'
     ).join('');
 
     // ---- 貼圖情緒分析 ----
@@ -1836,18 +1822,17 @@
         '</div></div>';
     }
     document.getElementById('stickerBox').innerHTML =
-      stickerRow('你', d.stickerA) + stickerRow('對方', d.stickerB) +
+      stickerRow('你', d.stickerMoodA) + stickerRow('對方', d.stickerMoodB) +
       '<div class="sticker-legend"><span><i class="sticker-dot" style="background:#8fc9a0"></i>正面</span>'+
       '<span><i class="sticker-dot" style="background:#e0d6c2"></i>中性</span>'+
       '<span><i class="sticker-dot" style="background:#e08a8a"></i>負面</span></div>';
 
     // ---- 每月訊息量長條圖 ----
-    const monthlyMsgs = [];
-    for(let i=0;i<6;i++){ monthlyMsgs.push(120 + Math.floor(Math.random()*480)); }
-    const maxMsg = Math.max(...monthlyMsgs);
+    const monthLabelsBar = d.monthLabels || ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
+    const monthlyMsgs = d.monthlyMessageCounts || Array.from({length:6}, ()=> 120 + Math.floor(Math.random()*480));
+    const maxMsg = Math.max(...monthlyMsgs, 1);
     const mw=300, mh=100, mpad=14, barGap=8;
     const barW = (mw - mpad*2 - barGap*(monthlyMsgs.length-1)) / monthlyMsgs.length;
-    const monthLabelsBar = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
     let barsSvg = '';
     monthlyMsgs.forEach((val,i)=>{
       const barH = (val/maxMsg) * (mh - mpad*2 - 14);
@@ -1860,12 +1845,7 @@
     document.getElementById('monthlyChart').innerHTML = barsSvg;
 
     // ---- 溫度趨勢 ----
-    const trendVals = [];
-    let v = 40+Math.floor(Math.random()*20);
-    for(let i=0;i<6;i++){
-      v = Math.max(20, Math.min(95, v + (Math.random()*24-8)));
-      trendVals.push(Math.round(v));
-    }
+    const trendVals = d.temperatureTrend || Array.from({length:6}, ()=> 40+Math.floor(Math.random()*40));
     const w=300,h=100,pad=14;
     const stepX = (w-pad*2)/(trendVals.length-1);
     const points = trendVals.map((val,i)=>{
@@ -1875,23 +1855,26 @@
     });
     const pathD = points.map((p,i)=> (i===0?'M':'L')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
     const dots = points.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="#cc9a5c"/>').join('');
-    const monthLabels = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
-    const labelsSvg = points.map((p,i)=>'<text x="'+p[0].toFixed(1)+'" y="'+(h-1)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+monthLabels[i]+'</text>').join('');
+    const labelsSvg = points.map((p,i)=>'<text x="'+p[0].toFixed(1)+'" y="'+(h-1)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+monthLabelsBar[i]+'</text>').join('');
     document.getElementById('trendChart').innerHTML =
       '<path d="'+pathD+'" fill="none" stroke="#cc9a5c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' + dots + labelsSvg;
 
     // ---- 關係大事記（AI 偵測＋使用者標記，合併顯示）----
-    const aiEvents = d.timeline.map(([date,text,summary,interp,impact])=>({
-      date, text, source:'ai', summary, interp, impact
+    const aiEvents = (d.timeline||[]).map(ev=>({
+      date:ev.date, text:ev.title, source:'ai', summary:ev.summary, interp:ev.interpretation, impact:ev.impact
     }));
-    const userEvents = userMilestones.map(m=>({
-      date:m.date, text:m.note, source:'user',
-      summary:'這是你自己標記的時刻，文字紀錄中不一定看得出來。',
-      interp:'根據你標記的「'+m.note+'」，正式版會實際比對這段時間前後的訊息內容，抓出對方語氣與互動節奏的具體轉變，現在先以示範文字呈現。',
-      impact:'標記後的分析，可以幫助你確認「當下感覺到的變化」跟「後續實際的互動模式」是否吻合。',
-    }));
-    const allEvents = aiEvents.concat(userEvents);
-    document.getElementById('relTimeline').innerHTML = allEvents.map((ev,i)=>{
+    const milestoneInterps = d.milestoneInterpretations || [];
+    const userEvents = userMilestones.map((m,i)=>{
+      const found = milestoneInterps.find(mi=>mi.index===i);
+      return {
+        date:m.date, text:m.note, source:'user',
+        summary: found ? found.summary : '這是你自己標記的時刻，AI 尚未在對話中找到明確對應內容。',
+        interp: found ? found.interpretation : '可能發生在文字紀錄涵蓋範圍之外，或當時互動較少留下文字線索。',
+        impact: found ? found.impact : '',
+      };
+    });
+    currentTimelineEvents = aiEvents.concat(userEvents);
+    document.getElementById('relTimeline').innerHTML = currentTimelineEvents.map((ev,i)=>{
       const tag = ev.source==='ai' ? '<span class="timeline-source-tag ai">AI 偵測</span>' : '<span class="timeline-source-tag user">你標記</span>';
       return '<div class="timeline-item'+(ev.source==='user'?' user-marked':'')+'" onclick="toggleTimelineDetail('+i+')">'+
         '<div class="timeline-date">'+ev.date+tag+'</div>'+
@@ -1923,14 +1906,10 @@
     }
 
     // ---- 洞察文字 ----
-    let personalText = d.personalInsight;
-    if(answered.length){
-      personalText += '（已納入你補充的 '+answered.length+' 項資訊，正式版會實際用這些內容調整分析結果，目前先以示範文字呈現）';
-    }
-    document.getElementById('personalInsight').textContent = personalText;
+    document.getElementById('personalInsight').textContent = d.personalInsight;
     document.getElementById('relInsight').textContent = d.overallInsight;
 
-    analysisHistory.unshift({ kind:'paid', time:new Date(), relType:relKey, scoreLabel:d.scoreLabel, chemScore:chemScore, messages:totalMsgs });
+    analysisHistory.unshift({ kind:'paid', time:new Date(), relType:relKey, scoreLabel:scoreLabel, chemScore:chemScore, messages:totalMsgs });
   }
 
   function toggleTimelineDetail(i){
@@ -1942,18 +1921,18 @@
     if(hint) hint.closest('.timeline-item').classList.toggle('expanded', isOpen);
   }
 
-  function aiReplyTemplate(userText){
+  function aiReplyFallback(userText, errMessage){
     let text = '';
     if(userText){
       const trimmed = userText.length>22 ? userText.slice(0,22)+'…' : userText;
       text += '關於「'+trimmed+'」，';
     }
     text += '從目前掌握的脈絡來看，這類狀況通常是雙方在表達方式上有落差，不一定是誰對誰錯。建議找個平靜的時機直接問對方當時實際的想法，會比自己反覆猜測更清楚。';
-    text += '（示範回覆，正式版會結合你上傳的實際對話內容生成真正對應的分析）';
+    text += '（追問失敗，改用預設回覆：'+errMessage+'）';
     return text;
   }
 
-  function sendFollowup(i){
+  async function sendFollowup(i){
     const inputEl = document.getElementById('tlFollowup'+i);
     const val = inputEl.value.trim();
     if(!val) return;
@@ -1974,16 +1953,26 @@
     thread.appendChild(typingEl);
     typingEl.scrollIntoView({block:'nearest', behavior:'smooth'});
 
-    const delay = 900 + Math.random()*700;
-    setTimeout(()=>{
-      typingEl.remove();
-      const aiBubble = document.createElement('div');
-      aiBubble.className = 'chat-bubble ai';
-      aiBubble.innerHTML = '<b>AI</b><p>'+aiReplyTemplate(val)+'</p>';
-      thread.appendChild(aiBubble);
-      inputEl.disabled = false;
-      if(sendBtn) sendBtn.disabled = false;
-    }, delay);
+    const ev = currentTimelineEvents[i] || {};
+    let replyText;
+    try{
+      const data = await callApi('/timeline-followup', {
+        event: { date: ev.date, title: ev.text, summary: ev.summary, interpretation: ev.interp },
+        question: val,
+        text: uploadedChatText,
+      });
+      replyText = data.reply || aiReplyFallback(val, '伺服器沒有回傳內容');
+    } catch(err){
+      replyText = aiReplyFallback(val, (err && err.message) || '未知錯誤');
+    }
+
+    typingEl.remove();
+    const aiBubble = document.createElement('div');
+    aiBubble.className = 'chat-bubble ai';
+    aiBubble.innerHTML = '<b>AI</b><p>'+replyText+'</p>';
+    thread.appendChild(aiBubble);
+    inputEl.disabled = false;
+    if(sendBtn) sendBtn.disabled = false;
   }
 
   function exitPaidUploadMode(){
@@ -1996,6 +1985,7 @@
     startBtn.textContent = '開始分析';
     userMilestones = [];
     aiAnswers = [];
+    lastRelationshipDraft = null;
     renderMilestoneList();
   }
 
@@ -2042,7 +2032,22 @@
     const card = document.getElementById('tarotCard');
     card.classList.remove('flipped');
     document.getElementById('resultBody').classList.remove('show');
-    currentPersona = personas[Math.floor(Math.random()*personas.length)];
+    const r = lastPersonaResult;
+    const base = (r && personas.find(p=>p.code===r.personaCode)) || personas[Math.floor(Math.random()*personas.length)];
+    currentPersona = r ? Object.assign({}, base, {
+      messages: r.messageCount || base.messages,
+      scores: [
+        ['溫度感', r.scores.temperature],
+        ['主動聊天', r.scores.initiative],
+        ['直球指數', r.scores.directness],
+        ['關係投入', r.scores.investment],
+      ],
+      keywords: (r.keywords||[]).map(k=>[k.word, k.count]),
+      insight: r.insight || base.insight,
+      monthLabels: r.monthLabels || null,
+      monthlySentenceCounts: r.monthlySentenceCounts || null,
+      monthlyMessageCounts: r.monthlyMessageCounts || null,
+    }) : base;
     document.getElementById('tarotFront').innerHTML =
       '<span class="tf-badge">'+avatarMarkup(currentPersona,58)+'</span>'+
       '<span class="tf-code">'+currentPersona.code+'</span>'+
@@ -2071,13 +2076,12 @@
       '<div class="kw-chip"><span class="kw-word">'+w+'</span><span class="kw-count">×'+c+'</span></div>'
     ).join('');
 
-    // ---- 每月句數統計（純算法，不用 AI）----
-    const sentenceCounts = [];
-    for(let i=0;i<6;i++){ sentenceCounts.push(80 + Math.floor(Math.random()*260)); }
-    const maxS = Math.max(...sentenceCounts);
+    // ---- 每月句數統計（優先使用 AI 依真實內容估算的數字，沒有資料時才用示範亂數）----
+    const sentenceCounts = p.monthlySentenceCounts || Array.from({length:6}, ()=> 80 + Math.floor(Math.random()*260));
+    const maxS = Math.max(...sentenceCounts, 1);
     const sw=300, sh=100, spad=14, sBarGap=8;
     const sBarW = (sw - spad*2 - sBarGap*(sentenceCounts.length-1)) / sentenceCounts.length;
-    const sMonthLabels = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
+    const sMonthLabels = p.monthLabels || ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
     let sBarsSvg = '';
     sentenceCounts.forEach((val,i)=>{
       const barH = (val/maxS) * (sh - spad*2 - 14);
@@ -2089,11 +2093,12 @@
     });
     document.getElementById('sentenceChart').innerHTML = sBarsSvg;
 
-    // ---- 每月訊息則數（純算法，不用 AI）----
-    const freqCounts = [];
-    const freqBase = Math.round(p.messages / 6);
-    for(let i=0;i<6;i++){ freqCounts.push(Math.max(20, freqBase + Math.floor((Math.random()-0.5)*freqBase*0.8))); }
-    const maxF = Math.max(...freqCounts);
+    // ---- 每月訊息則數（優先使用 AI 依真實內容估算的數字，沒有資料時才用示範亂數）----
+    const freqCounts = p.monthlyMessageCounts || (()=>{
+      const freqBase = Math.round(p.messages / 6);
+      return Array.from({length:6}, ()=> Math.max(20, freqBase + Math.floor((Math.random()-0.5)*freqBase*0.8)));
+    })();
+    const maxF = Math.max(...freqCounts, 1);
     const fw=300, fh=100, fpad=14, fBarGap=8;
     const fBarW = (fw - fpad*2 - fBarGap*(freqCounts.length-1)) / freqCounts.length;
     let fBarsSvg = '';
@@ -2120,6 +2125,7 @@
   function restart(){
     if(paidMode) exitPaidUploadMode();
     selectedMethod = null; hasInput = false; selectedAge = null; resetUploadedData();
+    lastPersonaResult = null;
     document.querySelectorAll('.method-card').forEach(c=>c.classList.remove('selected'));
     document.querySelectorAll('.age-pill').forEach(c=>{c.classList.remove('selected'); c.classList.remove('blocked');});
     ageBlockMsg.classList.remove('show');

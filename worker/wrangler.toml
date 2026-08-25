@@ -1,0 +1,10 @@
+name = "chat-persona-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+# 可覆寫要呼叫的 Claude 模型，不需要重新設定 secret。
+ANTHROPIC_MODEL = "claude-sonnet-5"
+# 部署後用 `wrangler secret put ALLOWED_ORIGIN` 設定，
+# 值為你的 GitHub Pages 網址（例如 https://your-user.github.io），可用逗號分隔多個網址。
+# 不設定的話預設允許所有來源（開發階段方便，正式上線建議設定）。

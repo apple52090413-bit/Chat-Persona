@@ -1,6 +1,10 @@
 Chat Persona 網站
 
-一個純前端（HTML/CSS/JS 全部內嵌於單一檔案）的聊天人格分析 / 塔羅風格互動原型頁面。
+一個聊天人格分析 / 塔羅風格互動網站。前端（`index.html`）是純 HTML/CSS/JS 單一檔案，部署在 GitHub Pages；`worker/` 是一個 Cloudflare Worker 後端，接上 Claude API 後會真的分析你上傳/貼上的聊天內容（人格分數、關鍵字、關係報告等），不再是寫死的範例資料。
+
+想要「上傳對話 → 開始分析」真的跑出根據你內容生成的結果，需要先部署 `worker/`（見 [`worker/README.md`](worker/README.md)），並把 Worker 網址填進 `index.html` 的 `API_BASE`。沒有設定的話，網站仍然可以瀏覽所有畫面，但按下「開始分析」會顯示提示訊息，說明需要先完成後端設定。
+
+付款流程（藍新金流頁面）是刻意做成的原型模擬，不會有任何真實金流或扣款。
 
 ## 本機預覽
 
