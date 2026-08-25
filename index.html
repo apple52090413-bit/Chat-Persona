@@ -255,7 +255,17 @@
     background:var(--panel); cursor:pointer;
   }
   .fake-upload-btn:hover{ border-color:var(--gold); }
+  .fake-upload-btn:disabled{ opacity:.5; cursor:not-allowed; }
   .fake-filename{ font-size:11.5px; color:var(--ink-dim); }
+  .fake-filename.error{ color:#c0392b; }
+  .img-thumbs{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:4px; }
+  .img-thumb{ position:relative; width:52px; height:52px; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
+  .img-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .img-thumb button{
+    position:absolute; top:2px; right:2px; width:16px; height:16px; border-radius:50%; border:none;
+    background:rgba(0,0,0,0.55); color:#fff; font-size:10px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
   .age-pills{ display:flex; flex-wrap:wrap; gap:7px; }
   .age-pill{
     border:1px solid var(--line); background:var(--panel-soft); color:var(--ink-soft);
@@ -1441,6 +1451,16 @@
   let selectedMethod = null;
   let hasInput = false;
   let paidMode = false;
+  let uploadedChatText = null;
+  let uploadedImages = [];
+  const MAX_FILE_BYTES = 5 * 1024 * 1024;
+  const MAX_IMAGES = 8;
+
+  function resetUploadedData(){
+    uploadedChatText = null;
+    uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
+    uploadedImages = [];
+  }
   const inputArea = document.getElementById('inputArea');
   const startBtn = document.getElementById('startBtn');
 
@@ -1468,7 +1488,7 @@
   function selectMethod(m){
     selectedMethod = m;
     document.querySelectorAll('.method-card').forEach(c=>c.classList.toggle('selected', c.dataset.method===m));
-    hasInput = false; updateStartBtn();
+    hasInput = false; resetUploadedData(); updateStartBtn();
 
     if(m==='paste'){
       inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" maxlength="80000" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / 80,000 字</div><div class="limit-hint">免費版分析最近 1–3 個月的對話（技術上限約 3,000 則或 15 萬字），超過只取最近的部分</div></div>';
@@ -1478,19 +1498,96 @@
         const len = e.target.value.length;
         counterEl.textContent = len.toLocaleString()+' / 80,000 字';
         counterEl.classList.toggle('near-limit', len > 72000);
-        hasInput = e.target.value.trim().length>0; updateStartBtn();
+        uploadedChatText = e.target.value.trim() ? e.target.value : null;
+        hasInput = !!uploadedChatText; updateStartBtn();
       });
     } else if(m==='file'){
-      inputArea.innerHTML = '<div class="fake-upload"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">免費版分析最近 1–3 個月，更早的對話只有進階版看得到</div></div>';
-      document.getElementById('fakeFileBtn').addEventListener('click', ()=>{
-        document.getElementById('fakeFileName').textContent = '已選擇：對話紀錄_line.txt（4.2MB，橫跨 11 個月，將分析最近 3 個月）';
-        hasInput = true; updateStartBtn();
+      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">免費版分析最近 1–3 個月，更早的對話只有進階版看得到</div></div>';
+      const fileInput = document.getElementById('realFileInput');
+      const nameEl = document.getElementById('fakeFileName');
+      document.getElementById('fakeFileBtn').addEventListener('click', ()=> fileInput.click());
+      fileInput.addEventListener('change', ()=>{
+        const f = fileInput.files[0];
+        if(!f) return;
+        const isTxt = /\.txt$/i.test(f.name) || f.type === 'text/plain';
+        if(!isTxt){
+          nameEl.textContent = '⚠ 目前僅支援 .txt 純文字檔';
+          nameEl.classList.add('error');
+          uploadedChatText = null; hasInput = false; updateStartBtn();
+          fileInput.value = '';
+          return;
+        }
+        if(f.size > MAX_FILE_BYTES){
+          nameEl.textContent = '⚠ 檔案大小 '+(f.size/1024/1024).toFixed(1)+'MB，超過 5MB 上限';
+          nameEl.classList.add('error');
+          uploadedChatText = null; hasInput = false; updateStartBtn();
+          fileInput.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = e=>{
+          uploadedChatText = e.target.result;
+          nameEl.classList.remove('error');
+          nameEl.textContent = '已選擇：'+f.name+'（'+(f.size/1024/1024).toFixed(2)+'MB，共 '+e.target.result.length.toLocaleString()+' 字）';
+          hasInput = true; updateStartBtn();
+        };
+        reader.onerror = ()=>{
+          nameEl.textContent = '⚠ 讀取檔案失敗，請重新選擇';
+          nameEl.classList.add('error');
+          uploadedChatText = null; hasInput = false; updateStartBtn();
+        };
+        reader.readAsText(f, 'UTF-8');
       });
     } else if(m==='image'){
-      inputArea.innerHTML = '<div class="fake-upload"><div class="method-icon" style="font-size:24px;">▣</div><button type="button" class="fake-upload-btn" id="fakeImgBtn">選擇截圖（最多 8 張）</button><div class="fake-filename" id="fakeImgName">尚未選擇圖片</div></div>';
-      document.getElementById('fakeImgBtn').addEventListener('click', ()=>{
-        document.getElementById('fakeImgName').textContent = '已選擇：IMG_2481.png（辨識中的樣式，正式版將接 OCR）';
-        hasInput = true; updateStartBtn();
+      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realImgInput" accept="image/*" multiple style="display:none"><div class="method-icon" style="font-size:24px;">▣</div><button type="button" class="fake-upload-btn" id="fakeImgBtn">選擇截圖（最多 8 張）</button><div class="fake-filename" id="fakeImgName">尚未選擇圖片</div><div class="img-thumbs" id="imgThumbs"></div></div>';
+      const imgInput = document.getElementById('realImgInput');
+      const nameEl = document.getElementById('fakeImgName');
+      const thumbsEl = document.getElementById('imgThumbs');
+      document.getElementById('fakeImgBtn').addEventListener('click', ()=> imgInput.click());
+
+      function renderThumbs(){
+        thumbsEl.innerHTML = uploadedImages.map((img,i)=>
+          '<div class="img-thumb"><img src="'+img.url+'" alt=""><button type="button" data-idx="'+i+'" aria-label="移除">✕</button></div>'
+        ).join('');
+        thumbsEl.querySelectorAll('button').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const idx = parseInt(btn.dataset.idx, 10);
+            URL.revokeObjectURL(uploadedImages[idx].url);
+            uploadedImages.splice(idx, 1);
+            updateImgStatus();
+          });
+        });
+      }
+      function updateImgStatus(){
+        renderThumbs();
+        if(uploadedImages.length === 0){
+          nameEl.textContent = '尚未選擇圖片';
+          nameEl.classList.remove('error');
+          hasInput = false;
+        } else {
+          nameEl.textContent = '已選擇 '+uploadedImages.length+' 張截圖';
+          nameEl.classList.remove('error');
+          hasInput = true;
+        }
+        updateStartBtn();
+      }
+      imgInput.addEventListener('change', ()=>{
+        const files = Array.from(imgInput.files).filter(f=>f.type.startsWith('image/'));
+        const room = MAX_IMAGES - uploadedImages.length;
+        if(room <= 0){
+          nameEl.textContent = '⚠ 最多只能選擇 '+MAX_IMAGES+' 張圖片';
+          nameEl.classList.add('error');
+          imgInput.value = '';
+          return;
+        }
+        const toAdd = files.slice(0, room);
+        toAdd.forEach(f=> uploadedImages.push({ file:f, url:URL.createObjectURL(f) }));
+        if(files.length > toAdd.length){
+          nameEl.textContent = '⚠ 最多只能選擇 '+MAX_IMAGES+' 張，已加入前 '+toAdd.length+' 張';
+          nameEl.classList.add('error');
+        }
+        imgInput.value = '';
+        updateImgStatus();
       });
     }
   }
@@ -2022,7 +2119,7 @@
 
   function restart(){
     if(paidMode) exitPaidUploadMode();
-    selectedMethod = null; hasInput = false; selectedAge = null;
+    selectedMethod = null; hasInput = false; selectedAge = null; resetUploadedData();
     document.querySelectorAll('.method-card').forEach(c=>c.classList.remove('selected'));
     document.querySelectorAll('.age-pill').forEach(c=>{c.classList.remove('selected'); c.classList.remove('blocked');});
     ageBlockMsg.classList.remove('show');
@@ -2113,7 +2210,7 @@
   // ---------- 付款完成後：切換上傳頁為「雙人關係」模式 ----------
   function enterPaidUploadMode(){
     paidMode = true;
-    selectedMethod = null; hasInput = false;
+    selectedMethod = null; hasInput = false; resetUploadedData();
     document.querySelectorAll('.method-card').forEach(c=>c.classList.remove('selected'));
     inputArea.innerHTML = '<div class="input-hint">先選擇上面其中一種方式</div>';
     document.querySelector('[data-screen="upload"] .eyebrow').textContent = 'STEP 3 · 上傳你們的對話';
