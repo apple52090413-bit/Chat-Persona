@@ -1,0 +1,2132 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>聊天人格分析 Chat Persona</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ---- 淺色主色系 ---- */
+    --bg1:#fcf8f4; --bg2:#f1e8fb; --bg3:#fdeef1;
+    --panel:#ffffff; --panel-soft:#faf6ff;
+    --ink:#3a2f52; --ink-soft:#7c6f97; --ink-dim:#afa3c9;
+    --gold:#cc9a5c; --gold-soft:#e8c994;
+    --rose:#ff93a9; --lav:#b49ce8;
+    --line: rgba(120,95,170,0.16);
+    --shadow: 0 22px 50px rgba(120,90,160,0.18);
+    /* ---- 塔羅牌專用深色（僅卡片本體使用）---- */
+    --tarot-deep:#150f2a; --tarot-mid:#221a44; --tarot-soft:#30234f;
+    --tarot-line: rgba(215,169,92,0.32);
+    --cream:#fbf1e2; --cream-dim:#e9dcc4;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 15% 0%, var(--bg2) 0%, transparent 55%),
+      radial-gradient(circle at 90% 85%, var(--bg3) 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg1), #fdfbf8);
+    font-family:"Noto Sans TC", sans-serif;
+    color:var(--ink-soft);
+    display:flex; align-items:center; justify-content:center;
+    padding:32px 16px; overflow-x:hidden;
+  }
+  .stagelabel{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    font-family:"Cormorant Garamond", serif; font-style:italic; font-size:12px;
+    letter-spacing:0.18em; color:var(--ink-dim); z-index:50; text-align:center; pointer-events:none;
+  }
+  .frame{
+    position:relative; width:390px; max-width:100%; height:800px; max-height:92vh;
+    background: linear-gradient(180deg, #ffffff, #fbf7fe);
+    border-radius:34px; border:1px solid var(--line);
+    box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,0.6);
+    overflow:hidden;
+  }
+  .stars{ position:absolute; inset:0; z-index:0; pointer-events:none; }
+  .star{
+    position:absolute; width:3px; height:3px; border-radius:50%;
+    background:var(--gold-soft); opacity:0.35;
+    animation: twinkle 3.4s ease-in-out infinite;
+  }
+  @keyframes twinkle{ 0%,100%{opacity:0.12; transform:scale(1);} 50%{opacity:0.6; transform:scale(1.5);} }
+  .screen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    padding:30px 26px 26px; opacity:0; visibility:hidden;
+    transform:translateY(14px); transition:opacity .45s ease, transform .45s ease; z-index:1;
+  }
+  .screen.active{ opacity:1; visibility:visible; transform:translateY(0); z-index:2; }
+  .eyebrow{
+    font-family:"Cormorant Garamond", serif; font-style:italic; font-size:13px;
+    letter-spacing:0.24em; color:var(--gold); text-align:center; margin:0 0 6px;
+  }
+  h1,h2,h3{ font-family:"Noto Serif TC", serif; color:var(--ink); margin:0; }
+  p{ line-height:1.75; margin:0; }
+  .btn{
+    appearance:none; border:none; cursor:pointer; font-family:"Noto Sans TC", sans-serif;
+    font-weight:700; font-size:15px; letter-spacing:0.02em; border-radius:999px; padding:15px 22px;
+    transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+  }
+  .btn:active{ transform:scale(0.97); }
+  .btn-primary{
+    background: linear-gradient(135deg, var(--gold-soft), var(--gold));
+    color:#3a2205; box-shadow:0 10px 24px rgba(204,154,92,0.35);
+  }
+  .btn-primary:hover{ box-shadow:0 14px 28px rgba(204,154,92,0.48); }
+  .btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink-soft); }
+  .btn-ghost:hover{ border-color:var(--gold); color:var(--gold); }
+  .btn[disabled]{ opacity:.35; cursor:not-allowed; }
+  .btn[disabled]:active{ transform:none; }
+  .btn-full{ width:100%; }
+
+  /* ---------- Landing ---------- */
+  #frame [data-screen="landing"]{ justify-content:flex-start; }
+  .landing-scroll{
+    display:flex; flex-direction:column; justify-content:space-between;
+    height:100%; overflow-y:auto; scrollbar-width:none;
+  }
+  .landing-scroll::-webkit-scrollbar{ display:none; }
+  .landing-top{ text-align:center; position:relative; }
+  .brand-lockup{ display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .brand-icon{ width:34px; height:34px; }
+  .brand-name{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:15px; color:var(--ink); }
+  .brand-en{ font-family:"Cormorant Garamond",serif; font-style:italic; font-size:10px; letter-spacing:.2em; color:var(--gold); }
+  .history-entry{
+    position:absolute; top:0; right:0; width:32px; height:32px; border-radius:50%;
+    border:1px solid var(--line); background:var(--panel-soft); font-size:14px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .history-note{ font-size:11px; color:var(--ink-dim); margin:8px 0 16px; line-height:1.6; }
+  .history-list{ display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex:1; min-height:0; }
+  .history-empty{ text-align:center; color:var(--ink-dim); font-size:12.5px; padding:40px 10px; }
+  .history-item{
+    display:flex; align-items:center; gap:11px; background:var(--panel-soft); border:1px solid var(--line);
+    border-radius:14px; padding:11px 13px;
+  }
+  .history-item .avatar-badge{ width:38px; height:45px; flex-shrink:0; }
+  .history-item .avatar-badge svg{ width:100%; height:100%; }
+  .history-item .hist-icon{
+    width:38px; height:38px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    font-size:15px; background:rgba(204,154,92,0.14);
+  }
+  .hist-body{ flex:1; min-width:0; }
+  .hist-title{ font-size:12.5px; font-weight:700; color:var(--ink); }
+  .hist-sub{ font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
+  .hist-tag{
+    font-size:9px; font-weight:700; padding:2px 8px; border-radius:999px; flex-shrink:0;
+  }
+  .hist-tag.free{ background:rgba(180,156,232,0.16); color:#6b4fa0; }
+  .hist-tag.paid{ background:rgba(204,154,92,0.16); color:var(--gold); }
+  .hero-visual{
+    position:relative; width:230px; height:230px; margin:6px auto 4px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hero-blob{
+    position:absolute; border-radius:50%; filter:blur(22px); opacity:.55;
+  }
+  .hero-blob.b1{ width:150px; height:150px; background:var(--gold-soft); top:6px; left:18px; }
+  .hero-blob.b2{ width:130px; height:130px; background:var(--lav); top:60px; right:6px; opacity:.4; }
+  .hero-blob.b3{ width:110px; height:110px; background:var(--rose); bottom:0; left:40px; opacity:.35; }
+  .hero-glow{
+    position:absolute; width:190px; height:190px; border-radius:50%;
+    background: radial-gradient(circle at 50% 42%, rgba(255,255,255,0.9), rgba(255,255,255,0) 70%);
+  }
+  .hero-art{ position:relative; width:100%; height:100%; z-index:2; }
+  .hero-art svg{ width:100%; height:100%; }
+  .hero-img{ width:100%; height:100%; object-fit:cover; border-radius:50%; position:relative; z-index:2; }
+  .drift{
+    position:absolute; border-radius:50%; background:var(--gold); z-index:3;
+    animation: driftUp 5s ease-in infinite;
+  }
+  @keyframes driftUp{
+    0%{ transform:translateY(0); opacity:0; }
+    15%{ opacity:.85; }
+    100%{ transform:translateY(-70px); opacity:0; }
+  }
+  .landing-title{ font-size:24px; line-height:1.45; font-weight:900; text-align:center; margin-bottom:10px; }
+  .landing-sub{ text-align:center; font-size:13.5px; color:var(--ink-soft); max-width:280px; margin:0 auto; }
+  .type-strip{ display:flex; gap:8px; justify-content:center; margin-top:16px; flex-wrap:wrap; padding:0 4px; }
+  .type-chip{ display:flex; flex-direction:column; align-items:center; gap:4px; width:44px; }
+  .type-chip .badge{
+    width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--line); background:var(--panel-soft); overflow:hidden;
+  }
+  .type-chip .badge svg{ width:100%; height:100%; }
+  .type-chip span{ font-size:9px; color:var(--ink-dim); text-align:center; line-height:1.3; }
+  .landing-bottom{ text-align:center; }
+  .proof-stats{ display:flex; justify-content:center; gap:22px; margin-top:14px; }
+  .proof-item{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .proof-item b{ font-family:"Noto Serif TC",serif; font-size:15px; color:var(--gold); }
+  .proof-item span{ font-size:10px; color:var(--ink-dim); }
+  .legal-disclaimer{ margin-top:12px; font-size:9.5px; color:var(--ink-dim); line-height:1.5; padding:0 10px; }
+  .parent-brand-tag{
+    margin-top:16px; display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .parent-brand-mark{
+    width:16px; height:16px; border-radius:5px; background:var(--ink);
+    color:#fff; font-family:"Noto Serif TC",serif; font-weight:900; font-size:10px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .parent-brand-text{ font-size:9.5px; letter-spacing:.16em; color:var(--ink-dim); font-weight:700; }
+  .parent-brand-img{ height:14px; object-fit:contain; }
+
+  .types-section{
+    margin-top:30px; padding-top:24px; border-top:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+  }
+  .types-title{ font-size:20px; margin-bottom:4px; }
+  .types-sub{ font-size:12px; color:var(--ink-dim); margin-bottom:16px; }
+  .types-carousel{
+    display:flex; gap:12px; width:100%; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding:6px 19% 16px; margin-bottom:2px; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .types-carousel::-webkit-scrollbar{ display:none; }
+  .type-card{
+    flex:0 0 62%; scroll-snap-align:center;
+    display:flex; align-items:center; justify-content:center; position:relative;
+    border-radius:18px; padding:18px 8px; border:1px solid var(--line); aspect-ratio:0.72;
+    box-shadow:0 10px 24px rgba(120,90,160,0.14);
+  }
+  .type-card .avatar-badge{ width:82px; height:98px; }
+  .type-card .avatar-badge svg{ width:100%; height:100%; }
+  .type-card .tc-mystery{
+    position:absolute; top:10px; right:13px; font-family:"Noto Serif TC",serif;
+    font-size:14px; color:rgba(58,47,82,0.3); font-weight:900;
+  }
+  .type-card{ flex-direction:column; gap:8px; }
+  .type-card.unlocked{ box-shadow:0 10px 24px rgba(204,154,92,0.3); }
+  .tc-unlocked-tag{
+    position:absolute; top:9px; right:9px; font-size:8.5px; font-weight:700;
+    background:rgba(255,255,255,0.75); color:var(--gold); padding:2px 7px; border-radius:999px;
+  }
+  .tc-unlocked-name{
+    font-family:"Noto Serif TC",serif; font-weight:900; font-size:11.5px; color:var(--ink); text-align:center;
+  }
+  .types-dots{ display:flex; justify-content:center; gap:6px; margin-bottom:16px; }
+  .types-dot{ width:6px; height:6px; border-radius:50%; background:var(--line); transition:background .2s ease, transform .2s ease; }
+  .types-dot.active{ background:var(--gold); transform:scale(1.35); }
+
+  /* ---------- Upload ---------- */
+  .back-btn{
+    align-self:flex-start; background:none; border:none; color:var(--ink-dim);
+    font-family:"Noto Sans TC", sans-serif; font-size:13px; cursor:pointer; padding:0; margin-bottom:12px;
+  }
+  .back-btn:hover{ color:var(--gold); }
+  .upload-scroll{ overflow-y:auto; flex:1; min-height:0; scrollbar-width:none; }
+  .upload-scroll::-webkit-scrollbar{ display:none; }
+  .section-title{ font-size:20px; line-height:1.5; margin:8px 0 14px; }
+  .field-label{
+    font-size:11px; letter-spacing:.12em; color:var(--ink-dim); text-transform:uppercase;
+    margin:18px 0 8px;
+  }
+  .method-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+  .method-card{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:16px;
+    padding:13px 6px; cursor:pointer; color:var(--ink-soft);
+    transition:border-color .18s ease, background .18s ease, transform .18s ease;
+  }
+  .method-card:hover{ transform:translateY(-2px); }
+  .method-card.selected{ border-color:var(--gold); background:rgba(204,154,92,0.12); }
+  .method-icon{ font-size:19px; color:var(--gold); }
+  .method-name{ font-size:12px; font-weight:700; color:var(--ink); }
+  .method-desc{ font-size:9.5px; color:var(--ink-dim); text-align:center; line-height:1.4; }
+  .input-area{
+    margin-top:10px; min-height:96px; border:1px dashed var(--line); border-radius:16px;
+    display:flex; align-items:center; justify-content:center; padding:14px;
+  }
+  .input-hint{ color:var(--ink-dim); font-size:12.5px; text-align:center; }
+  .paste-box{ width:100%; display:flex; flex-direction:column; gap:6px; }
+  .paste-box textarea{
+    height:78px; resize:none; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:10px 12px; color:var(--ink); font-family:"Noto Sans TC",sans-serif; font-size:13px;
+  }
+  .paste-box textarea::placeholder{ color:var(--ink-dim); }
+  .char-counter{ align-self:flex-end; font-size:10px; color:var(--ink-dim); }
+  .char-counter.near-limit{ color:var(--rose); font-weight:700; }
+  .limit-hint{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+  .fake-upload{ width:100%; display:flex; flex-direction:column; align-items:center; gap:9px; text-align:center; }
+  .fake-upload-btn{
+    border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:12px; color:var(--gold);
+    background:var(--panel); cursor:pointer;
+  }
+  .fake-upload-btn:hover{ border-color:var(--gold); }
+  .fake-filename{ font-size:11.5px; color:var(--ink-dim); }
+  .age-pills{ display:flex; flex-wrap:wrap; gap:7px; }
+  .age-pill{
+    border:1px solid var(--line); background:var(--panel-soft); color:var(--ink-soft);
+    border-radius:999px; padding:8px 14px; font-size:12px; cursor:pointer;
+  }
+  .age-pill.selected{ border-color:var(--gold); background:rgba(204,154,92,0.14); color:var(--ink); font-weight:700; }
+  .age-pill.blocked{ border-color:var(--rose); background:rgba(255,147,169,0.16); color:#b3435a; font-weight:700; }
+  .age-block-msg{
+    display:none; margin-top:8px; font-size:11px; color:#b3435a;
+    background:rgba(255,147,169,0.12); border:1px solid rgba(255,147,169,0.4); border-radius:10px; padding:9px 11px;
+  }
+  .age-block-msg.show{ display:block; }
+  .milestone-input-row{ display:flex; gap:6px; width:100%; }
+  .milestone-date-input{ flex:0 0 92px; min-width:0; }
+  .milestone-note-input{ flex:1; min-width:0; }
+  .milestone-date-input, .milestone-note-input{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:8px 10px; font-size:12px; color:var(--ink); font-family:"Noto Sans TC",sans-serif;
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .field-error{ border-color:#c0392b !important; background:rgba(192,57,43,0.06) !important; }
+  .milestone-date-input::placeholder, .milestone-note-input::placeholder{ color:var(--ink-dim); }
+  .milestone-add-btn{
+    flex:0 0 34px; border:1px solid var(--gold); background:rgba(204,154,92,0.12); color:var(--gold);
+    border-radius:10px; font-size:16px; font-weight:700; cursor:pointer;
+  }
+  .milestone-list{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .milestone-chip{
+    display:flex; align-items:center; gap:8px; background:var(--panel-soft); border:1px solid var(--line);
+    border-radius:10px; padding:7px 10px; font-size:11.5px;
+  }
+  .milestone-chip b{ color:var(--gold); flex-shrink:0; }
+  .milestone-chip span{ flex:1; min-width:0; color:var(--ink-soft); overflow-wrap:break-word; }
+  .milestone-chip button{
+    border:none; background:none; color:var(--ink-dim); cursor:pointer; font-size:14px; flex-shrink:0;
+  }
+  .upload-bottom{ margin-top:18px; text-align:center; }
+  .privacy-note{ margin-top:9px; font-size:10.5px; color:var(--ink-dim); }
+  .order-summary{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-top:6px;
+  }
+  .order-row{ display:flex; justify-content:space-between; align-items:baseline; font-size:14px; color:var(--ink); font-weight:700; }
+  .order-price{ color:var(--gold); font-family:"Noto Serif TC",serif; font-size:16px; }
+  .order-sub{ margin-top:6px; font-size:11.5px; color:var(--ink-dim); }
+  .redirect-note{
+    display:flex; gap:10px; align-items:flex-start; background:var(--panel-soft); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px; margin-top:14px;
+  }
+  .redirect-icon{ font-size:15px; margin-top:1px; }
+  .redirect-note p{ font-size:11.5px; color:var(--ink-soft); line-height:1.6; }
+  .redirect-note b{ color:var(--ink); }
+
+  /* ---------- NewebPay 藍新結帳頁模擬（獨立配色，模擬跳轉到第三方頁面）---------- */
+  .npay-screen{
+    background:#f4f7fb; padding:22px 20px 24px;
+  }
+  .npay-topbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .npay-back{ background:none; border:none; color:#6b7a90; font-size:12px; cursor:pointer; padding:0; }
+  .npay-ssl{ font-size:10px; color:#3a8f5c; font-weight:700; }
+  .npay-logo{ display:flex; align-items:center; gap:8px; margin-bottom:18px; }
+  .npay-logo-mark{
+    width:30px; height:30px; border-radius:8px; background:#0f5aa8; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-family:"Noto Serif TC",serif;
+    font-weight:900; font-size:15px; flex-shrink:0;
+  }
+  .npay-logo-text{ font-size:15px; font-weight:900; color:#0f3b66; }
+  .npay-logo-text span{ font-size:11px; font-weight:500; color:#6b7a90; margin-left:4px; }
+  .npay-order{
+    background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:13px 15px; margin-bottom:16px;
+  }
+  .npay-order-row{ display:flex; justify-content:space-between; font-size:12px; color:#5c6b80; padding:4px 0; }
+  .npay-amount-row{ border-top:1px dashed #e2e8f0; margin-top:4px; padding-top:8px; }
+  .npay-amount{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:17px; color:#0f5aa8; }
+  .npay-tabs{ display:flex; gap:6px; margin-bottom:14px; }
+  .npay-tab{
+    flex:1; min-width:0; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:9px 4px;
+    font-size:12px; color:#5c6b80; cursor:pointer; font-weight:700;
+  }
+  .npay-tab.selected{ background:#0f5aa8; border-color:#0f5aa8; color:#fff; }
+  .npay-field-group{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+  .npay-field label{ display:block; font-size:10.5px; color:#5c6b80; margin-bottom:4px; }
+  .npay-field input{
+    width:100%; background:#fff; border:1px solid #d3dce6; border-radius:8px; padding:10px 12px;
+    font-size:13px; color:#1a2c42; font-family:"Noto Sans TC",sans-serif;
+  }
+  .npay-field-row{ display:flex; gap:10px; }
+  .npay-field-row .npay-field{ flex:1; min-width:0; }
+  .npay-atm-box, .npay-cvs-box{
+    background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px; text-align:center;
+  }
+  .npay-atm-code{ font-family:"Noto Serif TC",serif; font-size:20px; font-weight:900; color:#0f5aa8; letter-spacing:.06em; margin:8px 0; }
+  .npay-atm-box p, .npay-cvs-box p{ font-size:11px; color:#5c6b80; line-height:1.6; }
+  .npay-pay-btn{
+    width:100%; background:#0f5aa8; color:#fff; border:none; border-radius:10px; padding:14px;
+    font-size:15px; font-weight:700; cursor:pointer; font-family:"Noto Sans TC",sans-serif;
+  }
+  .npay-pay-btn:active{ background:#0d4c8f; }
+  .npay-footnote{ text-align:center; font-size:9.5px; color:#94a3b8; margin-top:10px; line-height:1.5; }
+  .npay-error{ min-height:14px; font-size:11px; color:#c0392b; text-align:center; margin-top:8px; }
+  .consent-box{ display:flex; flex-direction:column; gap:8px; }
+  .consent-item{
+    display:flex; align-items:flex-start; gap:8px; cursor:pointer;
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:12px; padding:9px 10px;
+  }
+  .consent-item input[type="checkbox"]{
+    margin-top:2px; width:15px; height:15px; accent-color:var(--gold); flex-shrink:0; cursor:pointer;
+  }
+  .consent-item span{ font-size:11px; color:var(--ink-soft); line-height:1.5; }
+  .consent-item b{ color:var(--gold); font-weight:700; }
+
+  /* ---------- Loading ---------- */
+  #frame [data-screen="loading"]{ align-items:center; justify-content:center; }
+  .loading-wrap{ text-align:center; width:100%; }
+  .shuffle{ position:relative; width:120px; height:150px; margin:0 auto 24px; }
+  .shuffle-card{
+    position:absolute; inset:0; margin:auto; width:88px; height:130px; border-radius:12px;
+    background:linear-gradient(160deg, var(--panel), var(--panel-soft));
+    border:1px solid var(--line); box-shadow:0 10px 24px rgba(120,90,160,0.18);
+  }
+  .shuffle-card.c1{ animation:shuf1 1.6s ease-in-out infinite; }
+  .shuffle-card.c2{ animation:shuf2 1.6s ease-in-out infinite; }
+  .shuffle-card.c3{ animation:shuf3 1.6s ease-in-out infinite; }
+  @keyframes shuf1{ 0%,100%{transform:translateX(0) rotate(0deg);} 50%{transform:translateX(-26px) rotate(-10deg);} }
+  @keyframes shuf2{ 0%,100%{transform:translateY(0) scale(1);} 50%{transform:translateY(-10px) scale(1.03);} }
+  @keyframes shuf3{ 0%,100%{transform:translateX(0) rotate(0deg);} 50%{transform:translateX(26px) rotate(10deg);} }
+  .loading-text{ font-size:13.5px; color:var(--ink-soft); min-height:20px; }
+  .loading-sub{ font-size:11.5px; color:var(--ink-dim); margin-top:4px; }
+  .loading-bar{ width:70%; height:3px; margin:16px auto 0; background:rgba(120,95,170,0.12); border-radius:3px; overflow:hidden; }
+  .loading-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg, var(--gold), var(--gold-soft)); transition:width .35s linear; }
+
+  /* ---------- Reveal / Result ---------- */
+  .reveal-scroll{ overflow-y:auto; height:100%; padding-bottom:10px; scrollbar-width:none; }
+  .reveal-scroll::-webkit-scrollbar{ display:none; }
+  .tarot-stage{ perspective:1200px; display:flex; justify-content:center; margin:6px 0 20px; }
+  .tarot-card{
+    position:relative; width:186px; height:280px; cursor:pointer;
+    transform-style:preserve-3d; transition:transform .8s cubic-bezier(.2,.8,.2,1);
+  }
+  .tarot-card.flipped{ transform:rotateY(180deg); cursor:default; }
+  .tarot-face{
+    position:absolute; inset:0; backface-visibility:hidden; border-radius:16px;
+    border:1px solid var(--tarot-line); box-shadow:0 18px 38px rgba(60,40,90,0.28);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .tarot-back{
+    background:
+      repeating-linear-gradient(135deg, rgba(215,169,92,0.08) 0 2px, transparent 2px 14px),
+      linear-gradient(160deg, var(--tarot-soft), var(--tarot-deep));
+  }
+  .tarot-back-pattern{ display:grid; grid-template-columns:repeat(2,1fr); gap:24px 38px; color:var(--gold); opacity:.6; font-size:14px; margin-bottom:12px; }
+  .tap-hint{ position:absolute; bottom:15px; font-size:10.5px; letter-spacing:.14em; color:var(--gold-soft); opacity:.85; }
+  .tarot-front{
+    transform:rotateY(180deg); background:linear-gradient(180deg, var(--cream), var(--cream-dim));
+    padding:14px 14px; color:#3a2e10; justify-content:flex-start; gap:6px;
+  }
+  .tf-badge{ width:64px; height:76px; margin-top:2px; display:flex; align-items:center; justify-content:center; }
+  .tf-badge svg{ width:100%; height:100%; }
+  .tf-code{
+    font-size:10px; font-weight:700; letter-spacing:.08em; color:#8a6a2a;
+    background:rgba(138,106,42,0.1); border-radius:999px; padding:2px 10px; margin-top:2px;
+  }
+  .tf-name{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:16px; color:#3a2610; text-align:center; }
+  .tf-en{ font-family:"Cormorant Garamond",serif; font-style:italic; font-size:11.5px; letter-spacing:.1em; color:#8a6a2a; }
+  .tf-rule{ width:34px; height:1px; background:#c9a35e; margin:1px 0; }
+  .tf-line{ font-size:10.5px; color:#6b5424; text-align:center; padding:0 6px; line-height:1.5; }
+
+  .result-body{ opacity:0; transform:translateY(10px); transition:opacity .5s ease, transform .5s ease; padding-bottom:4px; }
+  .result-body.show{ opacity:1; transform:translateY(0); }
+  .result-title{ font-size:22px; text-align:center; }
+  .result-sub{
+    text-align:center; font-family:"Cormorant Garamond",serif; font-style:italic; color:var(--gold);
+    font-size:12.5px; letter-spacing:.08em; margin-top:4px;
+  }
+  .basis-stat{ text-align:center; font-size:11px; color:var(--ink-dim); margin-top:8px; letter-spacing:.03em; }
+  .basis-stat b{ color:var(--gold); font-weight:700; }
+  .result-desc{ margin-top:14px; font-size:13px; color:var(--ink-soft); text-align:center; }
+  .tags{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-top:15px; }
+  .tag{
+    font-size:11px; padding:5px 12px; border-radius:999px; border:1px solid var(--line);
+    color:var(--gold); background:rgba(204,154,92,0.1);
+  }
+  .block-label{ margin-top:22px; margin-bottom:10px; font-size:10.5px; letter-spacing:.14em; color:var(--ink-dim); text-transform:uppercase; }
+  .ring-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .ring-item{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .ring-item svg{ width:50px; height:50px; }
+  .ring-item .ring-bg{ fill:none; stroke:rgba(120,95,170,0.14); stroke-width:5; }
+  .ring-item .ring-fg{ fill:none; stroke-width:5; stroke-linecap:round; transition:stroke-dashoffset 1s ease; }
+  .ring-item .ring-num{ font-family:"Noto Serif TC",serif; font-size:13px; fill:var(--ink); text-anchor:middle; }
+  .ring-item .ring-label{ font-size:9.5px; color:var(--ink-dim); text-align:center; line-height:1.3; }
+  .keyword-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .kw-chip{
+    display:flex; align-items:baseline; gap:5px; background:var(--panel-soft); border:1px solid var(--line);
+    border-radius:10px; padding:6px 10px;
+  }
+  .kw-chip .kw-word{ font-size:12.5px; color:var(--ink); font-weight:700; }
+  .kw-chip .kw-count{ font-size:10px; color:var(--gold); }
+  .insight-box{
+    margin-top:20px; padding:16px; border-radius:14px;
+    background:linear-gradient(160deg, rgba(180,156,232,0.12), rgba(255,147,169,0.1));
+    border:1px solid var(--line);
+  }
+  .insight-eyebrow{ font-size:11px; letter-spacing:.1em; color:var(--gold); text-align:left; margin-bottom:6px; }
+  .insight-text{ font-size:12.5px; line-height:1.75; color:var(--ink-soft); text-align:left; }
+
+  /* ---------- Relationship Result (paid) ---------- */
+  .rel-type-badge{
+    text-align:center; font-size:11px; color:var(--gold); font-weight:700;
+    background:rgba(204,154,92,0.1); border:1px solid var(--line); border-radius:999px;
+    padding:4px 12px; width:fit-content; margin:0 auto 4px;
+  }
+  .chem-hero{ position:relative; width:150px; height:150px; margin:14px auto 4px; }
+  .chem-hero svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  .chem-bg{ fill:none; stroke:rgba(120,95,170,0.12); stroke-width:10; }
+  .chem-fg{
+    fill:none; stroke-width:10; stroke-linecap:round;
+    stroke:url(#chemGradient); stroke-dasharray:364.4; stroke-dashoffset:364.4;
+    transition:stroke-dashoffset 1.2s ease;
+  }
+  .chem-num-wrap{
+    position:absolute; inset:0; display:flex; align-items:baseline; justify-content:center; gap:2px;
+  }
+  .chem-num{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:36px; color:var(--ink); }
+  .chem-pct{ font-family:"Noto Serif TC",serif; font-weight:700; font-size:16px; color:var(--gold); }
+  .chem-label{ text-align:center; font-size:14px; font-weight:700; color:var(--ink); margin-top:2px; }
+
+
+  .split-list{ display:flex; flex-direction:column; gap:14px; }
+  .split-item{ display:flex; flex-direction:column; gap:5px; }
+  .split-label-row{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-soft); }
+  .split-bar{ height:8px; border-radius:6px; overflow:hidden; display:flex; background:rgba(120,95,170,0.1); }
+  .split-fill-a{ background:linear-gradient(90deg, var(--gold), var(--gold-soft)); height:100%; }
+  .split-fill-b{ background:linear-gradient(90deg, var(--lav), #d8c8f5); height:100%; }
+  .split-pct-row{ display:flex; justify-content:space-between; font-size:10px; color:var(--ink-dim); }
+
+  .trend-chart-wrap{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:14px; padding:12px;
+  }
+  .trend-chart-wrap svg{ width:100%; height:auto; display:block; }
+
+  .rel-btn-row{ display:flex; gap:10px; margin-top:22px; }
+  .rel-btn-row .btn{ flex:1; min-width:0; }
+  .block-note{ text-transform:none; letter-spacing:0; font-size:9.5px; color:var(--ink-dim); opacity:.8; }
+
+  .profile-cards{ display:flex; flex-direction:column; gap:10px; }
+  .profile-card{
+    display:flex; gap:12px; background:var(--panel-soft); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px;
+  }
+  .profile-avatar{ width:44px; height:52px; flex-shrink:0; }
+  .profile-avatar svg{ width:100%; height:100%; }
+  .profile-body{ flex:1; min-width:0; }
+  .profile-head{ display:flex; align-items:baseline; gap:6px; margin-bottom:5px; }
+  .profile-who{ font-size:12.5px; font-weight:900; color:var(--ink); font-family:"Noto Serif TC",serif; }
+  .profile-code{ font-size:10px; color:var(--gold); }
+  .profile-traits{ display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px; }
+  .profile-trait{
+    font-size:10px; padding:2px 8px; border-radius:999px; background:rgba(204,154,92,0.12);
+    color:var(--gold); border:1px solid var(--line);
+  }
+  .profile-desc{ font-size:11.5px; color:var(--ink-soft); line-height:1.6; }
+
+  .conflict-box{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:14px; padding:14px;
+  }
+  .conflict-freq{ font-size:13px; font-weight:700; color:var(--ink); margin-bottom:8px; }
+  .conflict-freq b{ color:#c0546b; font-family:"Noto Serif TC",serif; font-size:16px; }
+  .conflict-tags{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px; }
+  .conflict-tag{
+    font-size:11px; padding:4px 10px; border-radius:999px; background:rgba(255,147,169,0.14);
+    color:#c0546b; border:1px solid rgba(255,147,169,0.4);
+  }
+  .conflict-tag b{ margin-left:3px; }
+  .conflict-desc{ font-size:11.5px; color:var(--ink-soft); line-height:1.65; }
+
+  .sticker-box{ display:flex; flex-direction:column; gap:10px; }
+  .sticker-row{ display:flex; align-items:center; gap:10px; }
+  .sticker-who{ width:42px; font-size:11px; color:var(--ink-soft); font-weight:700; flex-shrink:0; }
+  .sticker-bar{ flex:1; min-width:0; height:14px; border-radius:7px; overflow:hidden; display:flex; }
+  .sticker-pos{ background:#8fc9a0; height:100%; }
+  .sticker-neu{ background:#e0d6c2; height:100%; }
+  .sticker-neg{ background:#e08a8a; height:100%; }
+  .sticker-legend{ display:flex; gap:12px; justify-content:center; font-size:10px; color:var(--ink-dim); }
+  .sticker-legend span{ display:flex; align-items:center; gap:4px; }
+  .sticker-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+  .timeline{ position:relative; padding-left:18px; display:flex; flex-direction:column; gap:14px; }
+  .timeline::before{
+    content:''; position:absolute; left:4px; top:4px; bottom:4px; width:1.5px;
+    background:linear-gradient(180deg, var(--gold), rgba(204,154,92,0.15));
+  }
+  .timeline-item{
+    position:relative; cursor:pointer;
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:13px;
+    padding:11px 13px; transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .timeline-item:hover{ border-color:var(--gold); box-shadow:0 4px 14px rgba(204,154,92,0.18); }
+  .timeline-item::before{
+    content:''; position:absolute; left:-19px; top:16px; width:9px; height:9px; border-radius:50%;
+    background:var(--gold); border:2px solid var(--bg1);
+  }
+  .timeline-date{ font-size:10px; color:var(--gold); font-weight:700; letter-spacing:.05em; }
+  .timeline-text{ font-size:11.5px; color:var(--ink-soft); line-height:1.6; margin-top:2px; }
+  .timeline-item.user-marked::before{ background:var(--rose); }
+  .timeline-source-tag{
+    display:inline-block; font-size:8.5px; font-weight:700; padding:1px 7px; border-radius:999px;
+    margin-left:6px; vertical-align:middle;
+  }
+  .timeline-source-tag.ai{ background:rgba(204,154,92,0.14); color:var(--gold); }
+  .timeline-source-tag.user{ background:rgba(255,147,169,0.16); color:#c0546b; }
+  .timeline-expand-hint{
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    margin:10px -13px -11px; padding:9px 13px;
+    font-size:11px; font-weight:700; color:#3a2205;
+    background:linear-gradient(135deg, var(--gold-soft), var(--gold));
+    border-radius:0 0 12px 12px;
+  }
+  .timeline-item.expanded .timeline-expand-hint{ border-radius:0; }
+  .timeline-expand-hint .chevron{
+    transition:transform .25s ease; display:inline-flex; align-items:center; justify-content:center;
+    width:16px; height:16px; border-radius:50%; background:rgba(255,255,255,0.5); font-size:9px;
+  }
+  .timeline-item.expanded .timeline-expand-hint .chevron{ transform:rotate(180deg); }
+  .timeline-detail{
+    display:none; margin-top:8px; padding:10px 12px; background:var(--panel-soft);
+    border:1px solid var(--line); border-radius:12px; font-size:11px; line-height:1.7; color:var(--ink-soft);
+  }
+  .timeline-detail.show{ display:block; }
+  .timeline-detail-row{ margin-bottom:6px; }
+  .timeline-detail-row:last-child{ margin-bottom:0; }
+  .timeline-detail-row b{ color:var(--ink); font-weight:700; }
+
+  .tl-chat-thread{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .chat-bubble{ border-radius:12px; padding:8px 10px; font-size:11px; line-height:1.6; }
+  .chat-bubble b{ display:block; font-size:9.5px; margin-bottom:3px; opacity:.7; }
+  .chat-bubble p{ margin:2px 0; }
+  .chat-bubble.user{ background:rgba(180,156,232,0.14); color:var(--ink); align-self:flex-end; max-width:88%; }
+  .chat-bubble.ai{ background:rgba(204,154,92,0.12); color:var(--ink-soft); align-self:flex-start; max-width:92%; }
+  .chat-followup-row{ display:flex; gap:6px; margin-top:10px; padding-top:9px; border-top:1px dashed var(--line); }
+  .chat-followup-row input{
+    flex:1; min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:999px;
+    padding:7px 12px; font-size:11px; color:var(--ink); font-family:"Noto Sans TC",sans-serif;
+  }
+  .chat-followup-row input::placeholder{ color:var(--ink-dim); }
+  .chat-followup-row button{
+    flex-shrink:0; border:none; background:var(--gold); color:#fff; border-radius:999px;
+    padding:0 14px; font-size:11px; font-weight:700; cursor:pointer;
+  }
+  .chat-followup-row input:disabled, .chat-followup-row button:disabled{ opacity:.5; cursor:not-allowed; }
+  .chat-typing{
+    display:flex; gap:4px; align-items:center; padding:10px 13px;
+    background:rgba(204,154,92,0.12); border-radius:12px; align-self:flex-start; width:fit-content;
+  }
+  .chat-typing span{
+    width:6px; height:6px; border-radius:50%; background:var(--gold); opacity:.5;
+    animation: typingBounce 1.2s infinite ease-in-out;
+  }
+  .chat-typing span:nth-child(2){ animation-delay:.2s; }
+  .chat-typing span:nth-child(3){ animation-delay:.4s; }
+  @keyframes typingBounce{
+    0%,60%,100%{ transform:translateY(0); opacity:.5; }
+    30%{ transform:translateY(-4px); opacity:1; }
+  }
+
+  .monthly-chart-wrap{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:14px; padding:12px;
+  }
+  .monthly-chart-wrap svg{ width:100%; height:auto; display:block; }
+
+  .ai-ask-note{ font-size:12px; color:var(--ink-dim); margin:6px 0 16px; line-height:1.6; }
+  .ai-ask-list{ display:flex; flex-direction:column; gap:14px; }
+  .ai-ask-item{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:14px; padding:13px 14px;
+  }
+  .ai-ask-q{ display:flex; gap:8px; font-size:12.5px; color:var(--ink); font-weight:700; line-height:1.6; margin-bottom:8px; }
+  .ai-ask-q-mark{ color:var(--gold); flex-shrink:0; }
+  .ai-ask-item textarea{
+    width:100%; height:56px; resize:none; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:8px 10px; font-size:12px; color:var(--ink); font-family:"Noto Sans TC",sans-serif;
+  }
+  .ai-ask-item textarea::placeholder{ color:var(--ink-dim); }
+
+  .upsell-card{
+    margin-top:24px; padding:18px; border-radius:18px; border:1px solid rgba(204,154,92,0.45);
+    background:linear-gradient(160deg, rgba(232,201,148,0.22), rgba(255,147,169,0.14));
+    text-align:center;
+  }
+  .upsell-lock{ font-size:19px; margin-bottom:4px; }
+  .upsell-title{ font-size:15.5px; }
+  .upsell-desc{ font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.6; }
+  .upsell-card .btn{ margin-top:14px; }
+  .founder-note{
+    margin-top:14px; padding:12px 13px; border-radius:12px; text-align:left;
+    background:rgba(255,255,255,0.55); border:1px dashed rgba(204,154,92,0.45);
+  }
+  .founder-note-quote{
+    font-size:11px; line-height:1.75; color:var(--ink-soft); font-style:italic;
+    font-family:"Noto Serif TC",serif;
+  }
+  .founder-note-sign{ margin-top:6px; font-size:10px; color:var(--gold); font-weight:700; text-align:right; }
+  .upsell-price-hook{ margin-top:12px; font-size:12.5px; font-weight:700; color:var(--ink); }
+  .result-body .btn-ghost{ margin-top:14px; }
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    position:absolute; inset:0; background:rgba(60,45,90,0.35);
+    display:flex; align-items:center; justify-content:center; padding:26px;
+    opacity:0; visibility:hidden; transition:opacity .25s ease; z-index:40;
+  }
+  .modal-overlay.show{ opacity:1; visibility:visible; }
+  .modal-card{
+    background:linear-gradient(160deg, #ffffff, var(--panel-soft));
+    border:1px solid var(--line); border-radius:20px; padding:24px 20px; text-align:center;
+    box-shadow:var(--shadow); max-height:90%; overflow-y:auto;
+  }
+  .modal-icon{ font-size:20px; color:var(--gold); margin-bottom:8px; }
+  .modal-card h3{ font-size:16.5px; margin-bottom:8px; }
+  .modal-card p{ font-size:12px; color:var(--ink-soft); margin-bottom:14px; }
+  .rel-pills{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-bottom:16px; }
+  .rel-pill{
+    border:1px solid var(--line); background:var(--panel); color:var(--ink-soft);
+    border-radius:999px; padding:8px 14px; font-size:12px; cursor:pointer;
+  }
+  .rel-pill.selected{ border-color:var(--gold); background:rgba(204,154,92,0.14); color:var(--ink); font-weight:700; }
+  .share-modal-card{ padding:20px 16px; max-width:280px; }
+  .share-preview{ width:100%; }
+  .share-card-inner{
+    border-radius:20px; padding:26px 18px; display:flex; flex-direction:column; align-items:center;
+    text-align:center; aspect-ratio:0.8; justify-content:center; gap:2px;
+    border:1px solid rgba(255,255,255,0.5);
+  }
+  .share-card-brand{ font-size:8.5px; letter-spacing:.12em; color:rgba(58,47,82,0.55); font-weight:700; margin-bottom:10px; }
+  .share-card-avatar{ width:88px; height:104px; display:block; margin-bottom:6px; }
+  .share-card-avatar svg{ width:100%; height:100%; }
+  .share-card-code{ font-size:10.5px; font-weight:700; color:rgba(58,47,82,0.6); letter-spacing:.05em; }
+  .share-card-name{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:21px; color:var(--ink); margin-top:2px; }
+  .share-card-en{ font-family:"Cormorant Garamond",serif; font-style:italic; font-size:10.5px; color:var(--gold); letter-spacing:.08em; margin-top:2px; }
+  .share-card-chem{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:46px; color:var(--ink); line-height:1; }
+  .share-card-chem span{ font-size:18px; color:var(--gold); }
+  .share-card-foot{ margin-top:14px; font-size:10px; color:var(--ink-soft); }
+
+  .modal-note{
+    font-size:11px; color:var(--ink-dim); background:var(--panel-soft); border-radius:10px; padding:10px 12px; margin-bottom:14px;
+  }
+  .rel-note{
+    width:100%; resize:none; height:56px; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:9px 11px; color:var(--ink); font-family:"Noto Sans TC",sans-serif; font-size:12.5px;
+    margin-bottom:16px;
+  }
+  .rel-note::placeholder{ color:var(--ink-dim); }
+  .compare-wrap{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; text-align:left; }
+  .compare-block{ border:1px solid var(--line); border-radius:14px; padding:13px 14px; }
+  .compare-block.free{ background:var(--panel-soft); }
+  .compare-block.paid{
+    background:linear-gradient(160deg, rgba(232,201,148,0.22), rgba(255,147,169,0.14));
+    border-color:rgba(204,154,92,0.5);
+  }
+  .compare-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .compare-head span:first-child{ font-size:12.5px; font-weight:700; color:var(--ink); }
+  .compare-price{ font-size:11px; color:var(--ink-dim); }
+  .compare-block.paid .compare-price{ color:var(--gold); font-weight:700; }
+  .compare-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px; }
+  .compare-list li{ font-size:11.5px; color:var(--ink-soft); display:flex; gap:6px; align-items:flex-start; }
+  .compare-block.free .compare-list li::before{ content:'✓'; color:var(--ink-dim); }
+  .compare-block.paid .compare-list li::before{ content:'✓'; color:var(--gold); font-weight:700; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 六種人格的簡化扁平人形插畫（中性氣質，供未來替換成畫師作品） -->
+    <symbol id="av-moon" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#c9b6f0"/>
+      <circle cx="50" cy="52" r="29" fill="#b7a6de"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <ellipse cx="42" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <ellipse cx="58" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <path d="M44 67 Q50 70.5 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M70 30a8 8 0 1 0 0 16c-1.6-1.3-2.6-3.8-2.6-8s1-6.7 2.6-8z" fill="#cc9a5c"/>
+    </symbol>
+    <symbol id="av-flame" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#ff9c7a"/>
+      <circle cx="50" cy="52" r="29" fill="#d98f6e"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <ellipse cx="42" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <ellipse cx="58" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <path d="M44 67 Q50 71 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M32 26c1.5 2.6-.8 3.6-.8 5.7a2.8 2.8 0 0 0 5.6 0c0-1.3-.8-1.8-.8-3 1.6 1.2 2.7 3.3 2.7 5.6a4.7 4.7 0 0 1-9.4 0c0-3.8 1.7-5.9 2.7-8.3z" fill="#e0793f"/>
+    </symbol>
+    <symbol id="av-cat" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#8fd6c4"/>
+      <path d="M27 30 16 16l14 6M73 30l11-14-14 6" fill="#4b4458"/>
+      <circle cx="50" cy="52" r="29" fill="#4b4458"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <ellipse cx="42" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <ellipse cx="58" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <path d="M44 67 Q50 70 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <circle cx="35" cy="63" r="1.3" fill="#c98a8a"/><circle cx="65" cy="63" r="1.3" fill="#c98a8a"/>
+    </symbol>
+    <symbol id="av-anchor" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#8fc9a0"/>
+      <circle cx="50" cy="52" r="29" fill="#4f6e68"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <ellipse cx="42" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <ellipse cx="58" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <path d="M44 67 Q50 70 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <g transform="translate(44 96)" stroke="#3d5a54" stroke-width="2" fill="none" stroke-linecap="round">
+        <circle cx="6" cy="0" r="2.6" fill="#e8f2ef" stroke="#3d5a54"/>
+        <path d="M6 3v9M2 8h8M0 12a6 6 0 0 0 12 0"/>
+      </g>
+    </symbol>
+    <symbol id="av-spark" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#e0a6e8"/>
+      <circle cx="50" cy="52" r="29" fill="#e3aeea"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <ellipse cx="42" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <ellipse cx="58" cy="57" rx="2.1" ry="2.7" fill="#3a2f52"/>
+      <path d="M44 67 Q50 71 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M24 34l1.6 4.4 4.4 1.6-4.4 1.6L24 46l-1.6-4.4-4.4-1.6 4.4-1.6z" fill="#cc9a5c"/>
+      <path d="M77 40l1.2 3.4 3.4 1.2-3.4 1.2L77 49l-1.2-3.4-3.4-1.2 3.4-1.2z" fill="#cc9a5c"/>
+    </symbol>
+    <symbol id="av-scope" viewBox="0 0 100 120">
+      <path d="M20 118 Q20 88 50 88 Q80 88 80 118 Z" fill="#9ab8e0"/>
+      <circle cx="50" cy="52" r="29" fill="#8c7a66"/>
+      <circle cx="50" cy="56" r="24" fill="#f3c9a0"/>
+      <path d="M44 67 Q50 70 56 67" stroke="#3a2f52" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <g stroke="#3a2f52" stroke-width="1.8" fill="none">
+        <circle cx="42" cy="57" r="6"/><circle cx="58" cy="57" r="6"/><path d="M48 57h4"/>
+      </g>
+    </symbol>
+  </defs>
+  <linearGradient id="chemGradient" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#e0745a"/><stop offset="100%" stop-color="#cc9a5c"/>
+  </linearGradient>
+</svg>
+<div class="stagelabel" id="stagelabel">畫面 1 / 5 · 首頁</div>
+<div class="frame" id="frame">
+  <div class="stars" id="stars"></div>
+
+  <!-- SCREEN 1: LANDING -->
+  <section class="screen active" data-screen="landing">
+   <div class="landing-scroll">
+    <div class="landing-top">
+      <button class="history-entry" onclick="goTo('historyLog')" aria-label="分析紀錄">🕘</button>
+      <div class="brand-lockup">
+        <svg class="brand-icon" viewBox="0 0 48 48">
+          <rect x="1" y="1" width="46" height="46" rx="14" fill="url(#brandGrad)"/>
+          <path d="M13 17a5 5 0 0 1 5-5h12a5 5 0 0 1 5 5v8a5 5 0 0 1-5 5H21l-6 4.5V30h-2z" fill="#fff"/>
+          <circle cx="19" cy="21" r="1.5" fill="#e8917a"/><circle cx="24" cy="21" r="1.5" fill="#e8917a"/><circle cx="29" cy="21" r="1.5" fill="#e8917a"/>
+          <defs><linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#f0a98e"/><stop offset="100%" stop-color="#e0745a"/>
+          </linearGradient></defs>
+        </svg>
+        <span class="brand-name">聊天人格分析</span>
+        <span class="brand-en">CHAT PERSONA</span>
+      </div>
+      <div class="hero-visual" id="heroVisual"></div>
+    </div>
+    <div class="landing-mid">
+      <h1 class="landing-title">你的聊天紀錄，<br/>藏著你的互動人格</h1>
+      <p class="landing-sub">上傳一段對話，AI 會實際計算你的用字頻率、回覆節奏與情緒起伏，分析出屬於你的聊天人格 —— 不用登入，附上完整數據。</p>
+      <div class="type-strip" id="typeStrip"></div>
+    </div>
+    <div class="landing-bottom">
+      <button class="btn btn-primary btn-full" onclick="goTo('upload')">開始分析我的聊天人格 →</button>
+      <div class="proof-stats">
+        <div class="proof-item"><b>52,000+</b><span>次分析完成</span></div>
+        <div class="proof-item"><b>6 種</b><span>人格類型</span></div>
+        <div class="proof-item"><b>3 分鐘</b><span>即可完成</span></div>
+      </div>
+      <p class="legal-disclaimer">僅供個人自我探索與娛樂參考，請勿用於跟蹤、騷擾、蒐證或其他不法用途</p>
+      <div class="parent-brand-tag" id="parentBrandTag"></div>
+    </div>
+
+    <div class="types-section">
+      <p class="eyebrow">SIX PERSONALITY TYPES</p>
+      <h2 class="types-title">六種形象，其中一個是你</h2>
+      <p class="types-sub">左右滑動看看，名字先保密，答案要分析完才會揭曉。</p>
+      <div class="types-carousel" id="typesCarousel"></div>
+      <div class="types-dots" id="typesDots"></div>
+      <button class="btn btn-primary btn-full" onclick="goTo('upload')">找出我是哪一種 →</button>
+    </div>
+   </div>
+  </section>
+
+  <!-- SCREEN: HISTORY LOG -->
+  <section class="screen" data-screen="historyLog">
+    <button class="back-btn" onclick="goTo('landing')">← 返回</button>
+    <p class="eyebrow">MY ANALYSIS LOG</p>
+    <h2 class="section-title">分析紀錄</h2>
+    <p class="history-note">紀錄只存在這次瀏覽中，重新整理頁面就會清空——正式版會存進你的帳號，永久保留。</p>
+    <div class="history-list" id="historyList"></div>
+  </section>
+
+  <!-- SCREEN 2: UPLOAD -->
+  <section class="screen" data-screen="upload">
+    <button class="back-btn" onclick="goTo('landing')">← 返回</button>
+    <div class="upload-scroll">
+      <p class="eyebrow">STEP 1 · 上傳你的對話</p>
+      <h2 class="section-title">選一種方式，<br/>開始分析你的聊天紀錄</h2>
+
+      <div class="method-grid">
+        <button class="method-card" data-method="paste" onclick="selectMethod('paste')">
+          <span class="method-icon">✎</span><span class="method-name">貼上文字</span><span class="method-desc">複製對話直接貼上</span>
+        </button>
+        <button class="method-card" data-method="file" onclick="selectMethod('file')">
+          <span class="method-icon">⇪</span><span class="method-name">上傳檔案</span><span class="method-desc">LINE / Messenger 匯出檔</span>
+        </button>
+        <button class="method-card" data-method="image" onclick="selectMethod('image')">
+          <span class="method-icon">▣</span><span class="method-name">上傳截圖</span><span class="method-desc">自動辨識對話文字</span>
+        </button>
+      </div>
+
+      <div class="input-area" id="inputArea">
+        <div class="input-hint">先選擇上面其中一種方式</div>
+      </div>
+
+      <div id="ageFieldWrap">
+        <p class="field-label">你的年齡</p>
+        <div class="age-pills" id="agePills">
+          <button class="age-pill" data-age="under18">18 以下</button>
+          <button class="age-pill" data-age="18-24">18–24</button>
+          <button class="age-pill" data-age="25-34">25–34</button>
+          <button class="age-pill" data-age="35-44">35–44</button>
+          <button class="age-pill" data-age="45+">45 以上</button>
+        </div>
+        <div class="age-block-msg" id="ageBlockMsg">本服務僅提供 18 歲以上使用，未滿 18 歲無法繼續分析</div>
+      </div>
+
+      <div id="milestoneFieldWrap" style="display:none;">
+        <p class="field-label">重要時刻標記 <span class="block-note">（選填，包含文字紀錄看不出來的事，例如「進展到牽手」）</span></p>
+        <div class="milestone-input-row">
+          <input type="text" id="milestoneDate" class="milestone-date-input" placeholder="日期，例如 2025/5/20">
+          <input type="text" id="milestoneNote" class="milestone-note-input" placeholder="發生了什麼，例如：第一次牽手">
+          <button type="button" class="milestone-add-btn" onclick="addMilestone()">+</button>
+        </div>
+        <div class="milestone-list" id="milestoneList"></div>
+      </div>
+
+      <p class="field-label">隱私與同意</p>
+      <div class="consent-box">
+        <label class="consent-item">
+          <input type="checkbox" id="consentOther" onchange="updateStartBtn()" />
+          <span>我已取得對話中另一方的同意，僅將本服務用於自我探索／娛樂用途，不會用於跟蹤、騷擾、蒐證、威脅或其他不法行為</span>
+        </label>
+        <label class="consent-item">
+          <input type="checkbox" id="consentAnalyze" onchange="updateStartBtn()" />
+          <span>我了解 AI 會用代號取代真實姓名與地點進行分析，並同意這份對話內容用於本次分析</span>
+        </label>
+        <label class="consent-item">
+          <input type="checkbox" id="consentTrain" onchange="updateStartBtn()" />
+          <span>我同意去識別化後的對話資料用於改善服務與模型訓練<b>（免費版須勾選才能使用）</b></span>
+        </label>
+      </div>
+
+      <div class="upload-bottom">
+        <button class="btn btn-primary btn-full" id="startBtn" disabled onclick="attemptStartAnalysis()">開始分析</button>
+        <p class="privacy-note">🔒 真實姓名／地點僅用於本次分析並會去識別化，資料不會公開分享</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN 3: LOADING -->
+  <section class="screen" data-screen="loading">
+    <div class="loading-wrap">
+      <div class="shuffle"><div class="shuffle-card c1"></div><div class="shuffle-card c2"></div><div class="shuffle-card c3"></div></div>
+      <p class="loading-text" id="loadingText">正在洗牌，讀取你的言語頻率...</p>
+      <p class="loading-sub" id="loadingSub"></p>
+      <div class="loading-bar"><div class="loading-bar-fill" id="loadingFill"></div></div>
+    </div>
+  </section>
+
+  <!-- SCREEN: PAYMENT -->
+  <section class="screen" data-screen="payment">
+    <button class="back-btn" onclick="goTo('reveal')">← 返回</button>
+    <p class="eyebrow">STEP 2 · 完成付款</p>
+    <h2 class="section-title">解鎖雙人關係報告</h2>
+
+    <div class="order-summary">
+      <div class="order-row">
+        <span>雙人關係深度報告</span>
+        <span class="order-price">NT$99</span>
+      </div>
+      <div class="order-sub" id="orderRelType">關係類型：尚未選擇</div>
+    </div>
+
+    <div class="redirect-note">
+      <span class="redirect-icon">🔒</span>
+      <p>按下按鈕後，會導向<b>藍新金流（NewebPay）</b>的安全付款頁面完成刷卡，我們不會接觸或儲存你的卡片資訊。</p>
+    </div>
+
+    <div class="upload-bottom">
+      <button class="btn btn-primary btn-full" onclick="goTo('npay')">前往藍新金流付款 →</button>
+      <p class="privacy-note">🔒 原型示範，不會有任何真實金流或扣款</p>
+    </div>
+  </section>
+
+  <!-- SCREEN: NEWEBPAY CHECKOUT (MOCK) -->
+  <section class="screen npay-screen" data-screen="npay">
+    <div class="npay-topbar">
+      <button class="npay-back" onclick="goTo('payment')">← 返回商店</button>
+      <span class="npay-ssl">🔒 SSL 安全連線</span>
+    </div>
+    <div class="npay-logo">
+      <span class="npay-logo-mark">N</span>
+      <span class="npay-logo-text">NewebPay <span>藍新金流</span></span>
+    </div>
+
+    <div class="npay-order">
+      <div class="npay-order-row"><span>訂單編號</span><span id="npayOrderId">DEMO20260824001</span></div>
+      <div class="npay-order-row"><span>特約商店</span><span>聊天人格分析</span></div>
+      <div class="npay-order-row npay-amount-row"><span>應付金額</span><span class="npay-amount">NT$ 99</span></div>
+    </div>
+
+    <div class="npay-tabs" id="npayTabs">
+      <button class="npay-tab selected" data-tab="card" onclick="selectNpayTab('card')">信用卡</button>
+      <button class="npay-tab" data-tab="atm" onclick="selectNpayTab('atm')">ATM 轉帳</button>
+      <button class="npay-tab" data-tab="cvs" onclick="selectNpayTab('cvs')">超商代碼</button>
+    </div>
+
+    <div id="npayTabContent"></div>
+    <p class="npay-error" id="npayError"></p>
+
+    <button class="npay-pay-btn" onclick="confirmPayment()">確認付款 NT$99</button>
+    <p class="npay-footnote">本頁面模擬藍新金流付款介面，僅供原型展示，不會產生任何真實交易</p>
+  </section>
+
+
+
+  <section class="screen" data-screen="reveal">
+    <div class="reveal-scroll" id="revealScroll">
+      <p class="eyebrow">你的分析結果是</p>
+      <div class="tarot-stage">
+        <div class="tarot-card" id="tarotCard" onclick="flipCard()">
+          <div class="tarot-face tarot-back">
+            <div class="tarot-back-pattern"><span>✦</span><span>✧</span><span>✦</span><span>✧</span><span>✧</span><span>✦</span><span>✧</span><span>✦</span></div>
+            <div class="tap-hint">輕觸翻牌</div>
+          </div>
+          <div class="tarot-face tarot-front" id="tarotFront"></div>
+        </div>
+      </div>
+
+      <div class="result-body" id="resultBody">
+        <h2 class="result-title" id="resultTitle"></h2>
+        <p class="result-sub" id="resultSub"></p>
+        <p class="basis-stat" id="basisStat"></p>
+        <p class="result-desc" id="resultDesc"></p>
+
+        <div class="tags" id="resultTags"></div>
+
+        <p class="block-label">核心指標</p>
+        <div class="ring-grid" id="resultRings"></div>
+
+        <p class="block-label">高頻用字統計</p>
+        <div class="keyword-chips" id="resultKeywords"></div>
+
+        <p class="block-label">每月句數統計</p>
+        <div class="monthly-chart-wrap">
+          <svg id="sentenceChart" viewBox="0 0 300 100"></svg>
+        </div>
+
+        <p class="block-label">每月訊息則數</p>
+        <div class="monthly-chart-wrap">
+          <svg id="freqChart" viewBox="0 0 300 100"></svg>
+        </div>
+
+        <div class="insight-box">
+          <p class="insight-eyebrow">✦ 核心洞察</p>
+          <p class="insight-text" id="resultInsight"></p>
+        </div>
+
+        <div class="upsell-card">
+          <div class="upsell-lock">🔒</div>
+          <h3 class="upsell-title">雙人關係深度解析</h3>
+          <p class="upsell-desc">上傳你們兩人的對話，更深入看懂這段關係的溫度、主導權，還有互動模式。</p>
+
+          <div class="founder-note">
+            <p class="founder-note-quote">老實說，我們不想做另一個「他愛不愛你」的星座測驗。如果你是那種吵架時，比起被安慰、更想先搞清楚事實的人——這個功能是為你設計的。AI 不會順著你的話說好聽的，只會照著數據告訴你這段關係實際上是什麼樣子，給你最中肯的建議。</p>
+            <p class="founder-note-sign">— 開發團隊</p>
+          </div>
+
+          <p class="upsell-price-hook">一杯咖啡的錢，換一次真正看懂彼此的機會 ☕</p>
+          <button class="btn btn-primary btn-full" onclick="showPaywall()">解鎖雙人關係報告 NT$99</button>
+        </div>
+
+        <div class="rel-btn-row" style="margin-top:14px;">
+          <button class="btn btn-ghost" onclick="openShareCard('free')">分享我的人格卡</button>
+          <button class="btn btn-ghost" onclick="restart()">重新分析一次</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN: AI ASK (PAID, before final report) -->
+  <section class="screen" data-screen="aiAsk">
+    <div class="reveal-scroll">
+      <p class="eyebrow">分析前，AI 想先確認幾件事</p>
+      <h2 class="section-title">補充這些，<br/>報告會更準</h2>
+      <p class="ai-ask-note">這些是 AI 從對話裡看不出來、但想多了解的地方，選填即可，跳過也沒關係。</p>
+      <div class="ai-ask-list" id="aiAskList"></div>
+      <button class="btn btn-primary btn-full" style="margin-top:18px;" onclick="submitAiAnswers()">生成完整報告 →</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: RELATIONSHIP RESULT (PAID) -->
+  <section class="screen" data-screen="relResult">
+    <div class="reveal-scroll">
+      <p class="eyebrow">雙人關係報告</p>
+      <p class="rel-type-badge" id="relTypeBadge"></p>
+
+      <div class="chem-hero">
+        <svg viewBox="0 0 140 140">
+          <circle class="chem-bg" cx="70" cy="70" r="58"/>
+          <circle class="chem-fg" id="chemRing" cx="70" cy="70" r="58"/>
+        </svg>
+        <div class="chem-num-wrap">
+          <span class="chem-num" id="chemNum">0</span>
+          <span class="chem-pct">%</span>
+        </div>
+      </div>
+      <p class="chem-label" id="chemLabel"></p>
+      <p class="basis-stat" id="relBasisStat"></p>
+
+      <p class="block-label">雙人個性側寫</p>
+      <div class="profile-cards" id="profileCards"></div>
+
+      <p class="block-label">衝突頻率與問題點</p>
+      <div class="conflict-box" id="conflictBox"></div>
+
+      <p class="block-label">互動指標對比</p>
+      <div class="split-list" id="splitList"></div>
+
+      <p class="block-label">高頻字詞</p>
+      <div class="keyword-chips" id="relKeywords"></div>
+
+      <p class="block-label">貼圖情緒分析 <span class="block-note">（需上傳截圖才會有此項目）</span></p>
+      <div class="sticker-box" id="stickerBox"></div>
+
+      <p class="block-label">每月訊息量</p>
+      <div class="monthly-chart-wrap">
+        <svg id="monthlyChart" viewBox="0 0 300 100"></svg>
+      </div>
+
+      <p class="block-label">溫度趨勢（近 6 次分析）</p>
+      <div class="trend-chart-wrap">
+        <svg id="trendChart" viewBox="0 0 300 100"></svg>
+      </div>
+
+      <p class="block-label">關係大事記</p>
+      <div class="timeline" id="relTimeline"></div>
+
+      <div id="aiAnswersSection" style="display:none;">
+        <p class="block-label">你補充的資訊</p>
+        <div class="ai-ask-list" id="aiAnswersBox"></div>
+      </div>
+
+      <div class="insight-box">
+        <p class="insight-eyebrow">✦ 關於你，在這段關係裡</p>
+        <p class="insight-text" id="personalInsight"></p>
+      </div>
+
+      <div class="insight-box">
+        <p class="insight-eyebrow">✦ 整體核心洞察</p>
+        <p class="insight-text" id="relInsight"></p>
+      </div>
+
+      <div class="rel-btn-row">
+        <button class="btn btn-ghost" onclick="alert('原型示範：正式版這裡會匯出完整 PDF 報告')">下載 PDF</button>
+        <button class="btn btn-ghost" onclick="openShareCard('paid')">分享報告</button>
+      </div>
+      <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="restart()">重新分析一次</button>
+    </div>
+  </section>
+
+  <!-- SHARE CARD MODAL -->
+  <div class="modal-overlay" id="shareCardOverlay">
+    <div class="modal-card share-modal-card" onclick="event.stopPropagation()">
+      <div class="share-preview" id="sharePreview"></div>
+      <div class="rel-btn-row" style="margin-top:16px;">
+        <button class="btn btn-ghost" onclick="alert('原型示範：正式版這裡會把這張卡存成圖片檔')">儲存圖片</button>
+        <button class="btn btn-ghost" onclick="alert('原型示範：正式版這裡會複製一個可分享的連結')">複製連結</button>
+      </div>
+      <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="document.getElementById('shareCardOverlay').classList.remove('show')">關閉</button>
+    </div>
+  </div>
+
+  <!-- AGE BLOCK MODAL -->
+  <div class="modal-overlay" id="ageBlockOverlay">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-icon">⚠️</div>
+      <h3>未滿 18 歲無法使用</h3>
+      <p>本服務僅提供 18 歲以上使用者進行聊天人格分析，未滿 18 歲請勿繼續使用本服務。</p>
+      <button class="btn btn-primary btn-full" onclick="document.getElementById('ageBlockOverlay').classList.remove('show')">我知道了</button>
+    </div>
+  </div>
+
+  <!-- PAYWALL MODAL -->
+  <div class="modal-overlay" id="paywallOverlay" onclick="hidePaywall(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-icon">✦</div>
+      <h3>這是什麼關係？</h3>
+      <p>先告訴我們這段關係，分析才會更準確。</p>
+      <div class="rel-pills" id="relPills">
+        <button class="rel-pill" data-rel="曖昧">曖昧</button>
+        <button class="rel-pill" data-rel="伴侶">伴侶</button>
+        <button class="rel-pill" data-rel="朋友">朋友</button>
+        <button class="rel-pill" data-rel="家人">家人</button>
+        <button class="rel-pill" data-rel="同事">同事</button>
+      </div>
+      <textarea class="rel-note" placeholder="用一句話形容你們的關係也可以（選填）例如：曖昧半年，最近突然變冷淡..."></textarea>
+
+      <div class="compare-wrap">
+        <div class="compare-block free">
+          <div class="compare-head"><span>免費版</span><span class="compare-price">NT$0</span></div>
+          <ul class="compare-list">
+            <li>單人聊天人格類型揭曉</li>
+            <li>核心指標與高頻用字統計</li>
+            <li>可分享結果卡片</li>
+          </ul>
+        </div>
+        <div class="compare-block paid">
+          <div class="compare-head"><span>進階版</span><span class="compare-price">NT$99 起</span></div>
+          <ul class="compare-list">
+            <li>包含所有免費功能</li>
+            <li>雙人關係深度報告（溫度／主導權／有沒有戲）</li>
+            <li>完整對話歷史分析，最長可追蹤 1 年關係趨勢（免費版僅近 3 個月）</li>
+            <li>個人溝通盲點與優勢完整解析</li>
+            <li>完整 PDF 匯出下載</li>
+          </ul>
+        </div>
+      </div>
+
+      <label class="consent-item" style="margin-bottom:14px;">
+        <input type="checkbox" id="consentTrainPaid" />
+        <span>我同意去識別化後的資料用於改善服務（<b>選填</b>，不同意不影響您的報告內容）</span>
+      </label>
+
+      <div class="modal-note">選好關係後，就可以前往付款頁完成解鎖。</div>
+      <button class="btn btn-primary btn-full" onclick="goToPayment()">前往付款 NT$99 →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---------- 星星背景 ----------
+  const starsEl = document.getElementById('stars');
+  for(let i=0;i<20;i++){
+    const s=document.createElement('span');
+    s.className='star';
+    s.style.left=Math.random()*100+'%'; s.style.top=Math.random()*100+'%';
+    s.style.animationDelay=(Math.random()*3)+'s';
+    starsEl.appendChild(s);
+  }
+
+  // ---------- 首頁主視覺（可替換區塊） ----------
+  // 目前用一張氛圍感的剪影插畫佔位。之後畫師的精緻插畫做好後，
+  // 把圖片網址填進 HERO_IMG，heroMarkup() 會自動改用 <img> 顯示，
+  // 版面（光暈、飄浮光點）完全不用更動。
+  const HERO_IMG = null; // 例如 'assets/hero-illustration.png'
+  function heroMarkup(){
+    if(HERO_IMG){
+      return '<img class="hero-img" src="'+HERO_IMG+'" alt="聊天人格分析主視覺" />';
+    }
+    return '<div class="hero-art"><svg viewBox="0 0 200 200">'+
+      '<circle cx="140" cy="54" r="26" fill="var(--gold-soft)" opacity="0.9"/>'+
+      '<circle cx="132" cy="47" r="21" fill="#fff9ec"/>'+
+      '<path d="M100 150c-24 0-40 14-45 34h90c-5-20-21-34-45-34z" fill="url(#heroSilhouette)"/>'+
+      '<circle cx="100" cy="132" r="15" fill="url(#heroSilhouette)"/>'+
+      '<path d="M64 178c6-30 16-42 20-46M136 178c-6-30-16-42-20-46" stroke="var(--gold)" stroke-width="1.4" fill="none" opacity="0.55" stroke-linecap="round"/>'+
+      '<defs><linearGradient id="heroSilhouette" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0%" stop-color="#8b7aa8"/><stop offset="100%" stop-color="#4f4270"/>'+
+      '</linearGradient></defs>'+
+      '</svg></div>';
+  }
+  const heroEl = document.getElementById('heroVisual');
+  heroEl.innerHTML =
+    '<span class="hero-blob b1"></span><span class="hero-blob b2"></span><span class="hero-blob b3"></span>'+
+    '<span class="hero-glow"></span>' + heroMarkup();
+  for(let i=0;i<10;i++){
+    const d=document.createElement('span');
+    d.className='drift';
+    const size = 2+Math.random()*2.5;
+    d.style.width=size+'px'; d.style.height=size+'px';
+    d.style.left=(20+Math.random()*60)+'%'; d.style.bottom=(10+Math.random()*30)+'%';
+    d.style.animationDelay=(Math.random()*5)+'s';
+    d.style.animationDuration=(4+Math.random()*3)+'s';
+    heroEl.appendChild(d);
+  }
+
+  // ---------- 集團品牌標（可替換區塊） ----------
+  // 「聊天人格分析」是產品品牌，「Persona LAB」是上層的公司／工作室品牌（未來可能養多個產品）。
+  // 現況：PARENT_BRAND_LOGO 是 null 時，顯示程式畫的文字版標記（方塊 + PERSONA LAB 字樣）。
+  // 換法：正式 Logo 做好後，把圖片網址填進 PARENT_BRAND_LOGO，會自動改用 <img> 顯示。
+  const PARENT_BRAND_LOGO = null; // 例如 'assets/persona-lab-logo.png'
+  function parentBrandMarkup(){
+    if(PARENT_BRAND_LOGO){
+      return '<img class="parent-brand-img" src="'+PARENT_BRAND_LOGO+'" alt="Persona LAB" />';
+    }
+    return '<span class="parent-brand-mark">P</span><span class="parent-brand-text">PERSONA LAB</span>';
+  }
+  document.getElementById('parentBrandTag').innerHTML = parentBrandMarkup();
+
+  // ---------- 畫面切換 ----------
+  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 藍新金流收銀台', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
+  function goTo(name){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.querySelector('[data-screen="'+name+'"]').classList.add('active');
+    document.getElementById('stagelabel').textContent = stageNames[name] || '';
+    if(name==='loading') runLoading();
+    if(name==='npay') initNpayCheckout();
+    if(name==='landing') renderTypesCarousel();
+    if(name==='historyLog') renderHistoryLog();
+  }
+
+  // ---------- 人格牌資料 ----------
+  // 每個角色的插畫目前用內建向量插畫 (avatar 對應上面 <symbol> 的 id)。
+  // 未來要換成畫師成品時，只要幫該 persona 加上 avatarImg: '圖片網址'，
+  // avatarMarkup() 會自動改用 <img> 顯示，不必更動任何版面或邏輯程式碼。
+  const personas = [
+    { avatar:'av-moon', accent:'#c9b6f0', code:'傾聽型', name:'月語者', en:'THE MOON WHISPERER', sub:'溫柔且擅長傾聽的聊天靈魂',
+      desc:'你習慣先接住對方的情緒，才慢慢說出自己的想法。訊息裡常有「辛苦了」「我懂」，你是那個讓人放心把心事丟出來的人。',
+      tags:['#情緒穩定','#傾聽型','#已讀不焦慮'], messages:2314,
+      scores:[['溫度感',82],['主動聊天',35],['直球指數',40],['關係投入',77]],
+      keywords:[['辛苦了',31],['我懂',24],['嗯嗯',58],['沒關係',19]],
+      insight:'你的訊息中有 68% 是先回應對方情緒，才提到自己的事——比起主導話題，你更常扮演「先接住」的那一方。' },
+    { avatar:'av-flame', accent:'#ff9c7a', code:'直球型', name:'焰語者', en:'THE FLAME SPEAKER', sub:'熱烈直接、有話直說的聊天靈魂',
+      desc:'你不太留白，想到什麼就說，訊息常常一句接一句地轟炸過去。你的熱情很有感染力，但偶爾也會被說「講話太衝」。',
+      tags:['#直球對決','#秒讀秒回','#情感濃烈'], messages:2874,
+      scores:[['溫度感',68],['主動聊天',88],['直球指數',91],['關係投入',73]],
+      keywords:[['欸',64],['真的假的',22],['哈哈哈',97],['已讀',12]],
+      insight:'你平均每則訊息間隔不到 40 秒，且有 91% 的句子直接切入重點——你的對話節奏偏快，喜歡立刻把話講開。' },
+    { avatar:'av-cat', accent:'#8fd6c4', code:'幽默型', name:'謎語貓', en:'THE RIDDLING CAT', sub:'幽默閃躲、話中有話的聊天靈魂',
+      desc:'你很少正面回答問題，習慣用哏或反問帶過。熟的人覺得你超好聊，不熟的人常常猜不透你到底在想什麼。',
+      tags:['#話中有話','#哏王','#已讀常拖延'], messages:1958,
+      scores:[['溫度感',55],['主動聊天',60],['直球指數',22],['關係投入',48]],
+      keywords:[['？',71],['笑死',45],['再說',18],['隨便',26]],
+      insight:'超過一半的提問你選擇用反問或玩笑帶過——你習慣先觀察對方的反應，才決定要不要認真回答。' },
+    { avatar:'av-anchor', accent:'#8fc9a0', code:'穩定型', name:'定海者', en:'THE ANCHOR', sub:'穩定可靠、細水長流的聊天靈魂',
+      desc:'你的訊息很少大起大落，語氣一直維持在同一個溫度。不太會已讀不回，也不太會突然消失，是那個讓人安心的存在。',
+      tags:['#情緒平穩','#準時回覆','#默默付出'], messages:2761,
+      scores:[['溫度感',74],['主動聊天',42],['直球指數',55],['關係投入',85]],
+      keywords:[['好喔',52],['到家了嗎',27],['吃飽了嗎',33],['辛苦了',29]],
+      insight:'你有 85% 的對話是在確認對方的狀態（吃飯、到家、休息），關心藏在日常瑣事裡，而不是說出口。' },
+    { avatar:'av-spark', accent:'#e0a6e8', code:'創意型', name:'織夢者', en:'THE DREAM WEAVER', sub:'想像力豐富、跳躍思考的聊天靈魂',
+      desc:'你的話題常常一秒鐘就飄到別的地方，從晚餐聊到平行宇宙也不奇怪。跟你聊天很少無聊，但對方偶爾要努力跟上。',
+      tags:['#跳躍思考','#哏很多','#話題製造機'], messages:2489,
+      scores:[['溫度感',70],['主動聊天',80],['直球指數',48],['關係投入',60]],
+      keywords:[['對了',41],['突然想到',23],['如果',37],['哈哈',88]],
+      insight:'你的訊息中「對了／突然想到」出現了 23 次——你很常主動開新話題，對話很少停在原地。' },
+    { avatar:'av-scope', accent:'#9ab8e0', code:'理性型', name:'觀星者', en:'THE STARGAZER', sub:'理性觀察、字字斟酌的聊天靈魂',
+      desc:'你會先想清楚才打字，句子通常完整、有邏輯，很少出現情緒性的用詞。冷靜是你的預設狀態，但也代表你其實想很多。',
+      tags:['#邏輯清晰','#惜字如金','#慢熱型'], messages:1622,
+      scores:[['溫度感',48],['主動聊天',30],['直球指數',66],['關係投入',52]],
+      keywords:[['其實',35],['了解',44],['嗯',63],['好的',19]],
+      insight:'你的平均句長是其他類型的 1.6 倍，且較少使用表情符號——你傾向把想法組織完整後才送出。' },
+  ];
+  let currentPersona = null;
+  let analysisHistory = []; // 本次瀏覽期間的分析紀錄（純前端記憶體，重新整理會清空）
+  let unlockedPersonaAvatars = new Set(); // 免費版抽到過的人格，首頁輪播會解鎖顯示名字
+  let selectedAge = null;
+
+  // ---------- 角色插畫渲染（可替換區塊，見上方註解） ----------
+  function avatarMarkup(persona, size){
+    size = size || 56;
+    if(persona.avatarImg){
+      return '<img class="avatar-img" src="'+persona.avatarImg+'" alt="'+persona.name+'" style="width:'+size+'px;height:'+size+'px;object-fit:cover;border-radius:12px;" />';
+    }
+    return '<svg viewBox="0 0 100 120" style="width:'+size+'px;height:'+(size*1.2)+'px;"><use href="#'+persona.avatar+'"/></svg>';
+  }
+
+  // ---------- 首頁人格類型預覽條 ----------
+  const typeStrip = document.getElementById('typeStrip');
+  if(typeStrip){
+    typeStrip.innerHTML = personas.map(p=>
+      '<div class="type-chip"><span class="badge">'+avatarMarkup(p,36)+'</span><span>'+p.code+'</span></div>'
+    ).join('');
+  }
+
+  function hexToRgba(hex, alpha){
+    const h = hex.replace('#','');
+    const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+    return 'rgba('+r+','+g+','+b+','+alpha+')';
+  }
+  function renderTypesCarousel(){
+    const typesCarousel = document.getElementById('typesCarousel');
+    if(!typesCarousel) return;
+    typesCarousel.innerHTML = personas.map(p=>{
+      const unlocked = unlockedPersonaAvatars.has(p.avatar);
+      return '<div class="type-card'+(unlocked?' unlocked':'')+'" style="background:'+hexToRgba(p.accent,0.16)+'; border-color:'+hexToRgba(p.accent,0.4)+';">'+
+        (unlocked
+          ? '<span class="tc-unlocked-tag">✓ 已解鎖</span>'
+          : '<span class="tc-mystery">?</span>') +
+        '<span class="avatar-badge">'+avatarMarkup(p,82)+'</span>'+
+        (unlocked ? '<span class="tc-unlocked-name">'+p.code+' · '+p.name+'</span>' : '') +
+      '</div>';
+    }).join('');
+
+    const dotsEl = document.getElementById('typesDots');
+    dotsEl.innerHTML = personas.map((_,i)=>'<span class="types-dot'+(i===0?' active':'')+'"></span>').join('');
+    const dots = dotsEl.querySelectorAll('.types-dot');
+
+    const cardObserver = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        if(entry.isIntersecting && entry.intersectionRatio > 0.6){
+          const idx = Array.from(typesCarousel.children).indexOf(entry.target);
+          dots.forEach((d,i)=>d.classList.toggle('active', i===idx));
+        }
+      });
+    }, { root: typesCarousel, threshold: [0.6] });
+    Array.from(typesCarousel.children).forEach(card=>cardObserver.observe(card));
+  }
+  renderTypesCarousel();
+
+  function renderHistoryLog(){
+    const el = document.getElementById('historyList');
+    if(!el) return;
+    if(analysisHistory.length === 0){
+      el.innerHTML = '<div class="history-empty">還沒有分析紀錄，去做你的第一次分析吧 ✦</div>';
+      return;
+    }
+    el.innerHTML = analysisHistory.map(h=>{
+      const timeStr = h.time.toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+      if(h.kind === 'free'){
+        const persona = personas.find(p=>p.avatar===h.avatar) || personas[0];
+        return '<div class="history-item">'+
+          '<span class="avatar-badge">'+avatarMarkup(persona,38)+'</span>'+
+          '<div class="hist-body"><div class="hist-title">'+h.code+' · '+h.name+'</div><div class="hist-sub">'+timeStr+' · 分析 '+h.messages.toLocaleString()+' 則訊息</div></div>'+
+          '<span class="hist-tag free">免費版</span>'+
+        '</div>';
+      }
+      return '<div class="history-item">'+
+        '<span class="hist-icon">💞</span>'+
+        '<div class="hist-body"><div class="hist-title">'+h.relType+'關係 · '+h.scoreLabel+' '+h.chemScore+'%</div><div class="hist-sub">'+timeStr+' · 分析 '+h.messages.toLocaleString()+' 則訊息</div></div>'+
+        '<span class="hist-tag paid">付費版</span>'+
+      '</div>';
+    }).join('');
+  }
+
+  function openShareCard(kind){
+    const preview = document.getElementById('sharePreview');
+    if(kind==='free'){
+      const p = currentPersona;
+      if(!p) return;
+      preview.innerHTML =
+        '<div class="share-card-inner" style="background:linear-gradient(160deg, '+hexToRgba(p.accent,0.35)+', '+hexToRgba(p.accent,0.12)+');">'+
+          '<div class="share-card-brand">聊天人格分析 · CHAT PERSONA</div>'+
+          '<span class="share-card-avatar">'+avatarMarkup(p,90)+'</span>'+
+          '<div class="share-card-code">'+p.code+'</div>'+
+          '<div class="share-card-name">'+p.name+'</div>'+
+          '<div class="share-card-en">'+p.en+'</div>'+
+          '<div class="share-card-foot">你也想知道自己是哪一型嗎？</div>'+
+        '</div>';
+    } else {
+      const h = analysisHistory.find(a=>a.kind==='paid');
+      if(!h) return;
+      preview.innerHTML =
+        '<div class="share-card-inner" style="background:linear-gradient(160deg, rgba(232,201,148,0.4), rgba(255,147,169,0.22));">'+
+          '<div class="share-card-brand">聊天人格分析 · CHAT PERSONA</div>'+
+          '<div class="share-card-chem">'+h.chemScore+'<span>%</span></div>'+
+          '<div class="share-card-code">'+h.scoreLabel+'</div>'+
+          '<div class="share-card-name">'+h.relType+'關係報告</div>'+
+          '<div class="share-card-foot">想知道你們的關係報告嗎？</div>'+
+        '</div>';
+    }
+    document.getElementById('shareCardOverlay').classList.add('show');
+  }
+
+
+  // ---------- 上傳頁：年齡選擇 ----------
+  const ageBlockMsg = document.getElementById('ageBlockMsg');
+  document.querySelectorAll('.age-pill').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      selectedAge = btn.dataset.age;
+      document.querySelectorAll('.age-pill').forEach(b=>{
+        b.classList.toggle('selected', b===btn && b.dataset.age!=='under18');
+        b.classList.toggle('blocked', b===btn && b.dataset.age==='under18');
+      });
+      ageBlockMsg.classList.toggle('show', selectedAge==='under18');
+      updateStartBtn();
+    });
+  });
+
+  // ---------- 上傳方式 ----------
+  let selectedMethod = null;
+  let hasInput = false;
+  let paidMode = false;
+  const inputArea = document.getElementById('inputArea');
+  const startBtn = document.getElementById('startBtn');
+
+  function updateStartBtn(){
+    const consentOther = document.getElementById('consentOther').checked;
+    const consentAnalyze = document.getElementById('consentAnalyze').checked;
+    const consentTrain = document.getElementById('consentTrain').checked;
+    if(paidMode){
+      startBtn.disabled = !(hasInput && consentOther && consentAnalyze);
+    } else {
+      startBtn.disabled = !(hasInput && selectedAge && consentOther && consentAnalyze && consentTrain);
+    }
+  }
+
+  let loadingPhase = 'initial';
+  function attemptStartAnalysis(){
+    if(!paidMode && selectedAge === 'under18'){
+      document.getElementById('ageBlockOverlay').classList.add('show');
+      return;
+    }
+    loadingPhase = 'initial';
+    goTo('loading');
+  }
+
+  function selectMethod(m){
+    selectedMethod = m;
+    document.querySelectorAll('.method-card').forEach(c=>c.classList.toggle('selected', c.dataset.method===m));
+    hasInput = false; updateStartBtn();
+
+    if(m==='paste'){
+      inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" maxlength="80000" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / 80,000 字</div><div class="limit-hint">免費版分析最近 1–3 個月的對話（技術上限約 3,000 則或 15 萬字），超過只取最近的部分</div></div>';
+      const pasteEl = document.getElementById('pasteText');
+      const counterEl = document.getElementById('charCounter');
+      pasteEl.addEventListener('input', e=>{
+        const len = e.target.value.length;
+        counterEl.textContent = len.toLocaleString()+' / 80,000 字';
+        counterEl.classList.toggle('near-limit', len > 72000);
+        hasInput = e.target.value.trim().length>0; updateStartBtn();
+      });
+    } else if(m==='file'){
+      inputArea.innerHTML = '<div class="fake-upload"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">免費版分析最近 1–3 個月，更早的對話只有進階版看得到</div></div>';
+      document.getElementById('fakeFileBtn').addEventListener('click', ()=>{
+        document.getElementById('fakeFileName').textContent = '已選擇：對話紀錄_line.txt（4.2MB，橫跨 11 個月，將分析最近 3 個月）';
+        hasInput = true; updateStartBtn();
+      });
+    } else if(m==='image'){
+      inputArea.innerHTML = '<div class="fake-upload"><div class="method-icon" style="font-size:24px;">▣</div><button type="button" class="fake-upload-btn" id="fakeImgBtn">選擇截圖（最多 8 張）</button><div class="fake-filename" id="fakeImgName">尚未選擇圖片</div></div>';
+      document.getElementById('fakeImgBtn').addEventListener('click', ()=>{
+        document.getElementById('fakeImgName').textContent = '已選擇：IMG_2481.png（辨識中的樣式，正式版將接 OCR）';
+        hasInput = true; updateStartBtn();
+      });
+    }
+  }
+
+  // ---------- 讀取中動畫 ----------
+  const loadingMessages = ['正在洗牌，讀取你的言語頻率...','正在計算已讀速度與句尾語氣...','正在比對用字習慣與情緒溫度...','快好了，牌卡正在成形...'];
+  const loadingMessagesPaid = ['正在比對你們兩人的對話節奏...','正在計算溫度與主導權分布...','正在交叉分析關係模式...','快整理好幾個想確認的問題了...'];
+  const loadingMessagesFinal = ['正在根據你的回答重新校準分析...','正在整合你補充的重要時刻...','正在生成完整關係報告...'];
+  function runLoading(){
+    const textEl = document.getElementById('loadingText');
+    const subEl = document.getElementById('loadingSub');
+    const fill = document.getElementById('loadingFill');
+    subEl.textContent = '';
+    let messages = loadingMessages;
+    if(paidMode) messages = (loadingPhase==='final') ? loadingMessagesFinal : loadingMessagesPaid;
+    let step = 0; fill.style.width='0%'; textEl.textContent = messages[0];
+    const total = messages.length;
+    const interval = setInterval(()=>{
+      step++;
+      fill.style.width = Math.min(100,(step/total)*100)+'%';
+      if(step < total){ textEl.textContent = messages[step]; }
+      else{
+        clearInterval(interval);
+        setTimeout(()=>{
+          if(paidMode){
+            if(loadingPhase==='initial'){
+              prepareAiQuestions(); goTo('aiAsk');
+            } else {
+              goTo('relResult'); prepareRelationshipResult();
+            }
+          } else {
+            goTo('reveal'); prepareCard();
+          }
+        }, 400);
+      }
+    }, 650);
+  }
+
+  // ---------- AI 主動提問（付費版，報告產出前）----------
+  const aiQuestionsByType = {
+    '曖昧': ['第 4 個月出現超過 24 小時已讀不回的低潮期，那段時間實際發生了什麼？','如果滿分 10 分，你覺得對方現在對這段關係的認真程度是幾分？','有沒有一次讓你印象最深、但可能沒被抓進分析的對話？'],
+    '伴侶': ['第 3 個月是衝突高峰期，那段時間除了對話之外，生活上是不是也剛好有其他壓力？','你們吵架時，通常是什麼原因讓你決定先低頭？','金錢話題目前還沒真正解決，你們討論過共同的財務規劃嗎？'],
+    '朋友': ['半年前那次聊天量驟降，是你們各自忙，還是有什麼特定原因？','重新聯絡之後，是誰先開口的？當下感覺如何？'],
+    '家人': ['生活習慣的碎念摩擦，通常具體是哪些事情？','對方的關心，什麼時候會讓你覺得是「愛」，什麼時候會覺得是「壓力」？'],
+    '同事': ['分工認知落差那次，後來實際上是怎麼解決的？','你們除了工作，有沒有聊過一點點私人的事？'],
+  };
+  function prepareAiQuestions(){
+    const relKey = (selectedRelationship && aiQuestionsByType[selectedRelationship]) ? selectedRelationship : '曖昧';
+    const qs = aiQuestionsByType[relKey];
+    document.getElementById('aiAskList').innerHTML = qs.map((q,i)=>
+      '<div class="ai-ask-item"><div class="ai-ask-q"><span class="ai-ask-q-mark">✦</span><span>'+q+'</span></div>'+
+      '<textarea id="aiAskAns'+i+'" placeholder="可以先跳過，之後也能再補充..."></textarea></div>'
+    ).join('');
+  }
+  function submitAiAnswers(){
+    const relKey = (selectedRelationship && aiQuestionsByType[selectedRelationship]) ? selectedRelationship : '曖昧';
+    const qs = aiQuestionsByType[relKey];
+    aiAnswers = qs.map((q,i)=>{
+      const el = document.getElementById('aiAskAns'+i);
+      return { question:q, answer: el && el.value.trim() ? el.value.trim() : null };
+    });
+    loadingPhase = 'final';
+    goTo('loading');
+  }
+
+  function prepareRelationshipResult(){
+    const relDeep = {
+      '曖昧': {
+        badge:'關係類型：曖昧', scoreLabel:'有戲指數',
+        personA:{ code:'直球型', name:'你', traits:['主動找話題','已讀秒回','愛用問句'],
+          desc:'你在對話中常常主動拋出新話題，遇到冷場會用問句延續，顯示你很在意這段互動有沒有持續下去。' },
+        personB:{ code:'幽默型', name:'對方', traits:['慢熱','愛開玩笑','已讀常拖延'],
+          desc:'對方回覆速度不算快，但一開口常帶點玩笑語氣，像是在用幽默感試探彼此的熟悉程度，而不是冷淡。' },
+        conflictFreq:'0.8', conflictUnit:'次意見不合／月',
+        conflictTags:[['已讀不回',5],['話題突然中斷',3],['關係定義不明確',2]],
+        conflictDesc:'衝突多半發生在你主動釋出好感、但對方回應曖昧不明的時候，容易讓你的不確定感升高，進而傳更多訊息求確認。',
+        stickerA:{positive:62,neutral:28,negative:10}, stickerB:{positive:48,neutral:40,negative:12},
+        timeline:[
+          ['第1個月','開始密集聊天，訊息量明顯上升','從偶爾聊天變成每天早晚都有訊息，話題從打招呼延伸到分享日常小事。','雙方都在用「增加互動頻率」測試對方的興趣程度，這階段的熱絡通常代表彼此都對關係抱有期待。','後續兩週互動量持續攀升，成為關係升溫的起點。'],
+          ['第2個月','第一次單獨出去，話題變得更私人','約出去之後，訊息內容從日常瑣事轉為聊價值觀、過去經驗這類更深入的話題。','願意聊更私人的事，代表對方開始把你放進「可以信任」的名單裡，這是關係推進的訊號。','私人話題的比例在這之後持續維持高檔，沒有再退回表面閒聊。'],
+          ['第4個月','出現一次已讀不回超過 24 小時的低潮期','你連續傳了幾則訊息追問，對方隔了一天才簡短回覆「最近有點忙」。','已讀不回本身不一定代表降溫，但你回應的方式（連續追問）透露出你把這件事解讀得比對方原意更嚴重。','低潮期過後互動量回升，但你之後傳訊息的間隔明顯拉長，像是在自我保護。'],
+          ['第5個月','關係回溫，開始互稱曖昧限定的暱稱','雙方開始用只有彼此才懂的稱呼互動，訊息裡的表情符號與甜度用詞明顯增加。','專屬稱呼是關係「被雙方默認」的訊號，代表這段曖昧已經有了某種共識，即使沒有明講。','此後的對話基調維持在較高溫度，直到本次分析。'],
+          ['本次分析','互動頻率創新高，但關係狀態仍未明朗','訊息量達到分析期間的高峰，但雙方都還沒有出現明確定義關係的字眼。','熱度夠高、但沒有人開口定義，通常代表雙方都在等對方先跨出那一步。','建議關注接下來 1-2 個月是否有人主動挑明關係，這往往是曖昧期的關鍵轉折點。'],
+        ],
+        personalInsight:'在這段曖昧關係中，你習慣用「主動」來降低不安全感——每次對方回應變慢，你會傳更多訊息去確認關係，而不是等待。這種模式短期能維持熱度，但長期可能讓你在情感上消耗更多。',
+        overallInsight:'你們的訊息間隔平均在 20 分鐘內互相回應，且雙方都主動拋出新話題——這種節奏在曖昧期不算常見，通常代表雙方都還想繼續聊下去。' },
+      '伴侶': {
+        badge:'關係類型：伴侶', scoreLabel:'關係穩定度',
+        personA:{ code:'穩定型', name:'你', traits:['準時回覆','情緒平穩','習慣先道歉'],
+          desc:'你的語氣起伏很小，吵架時通常是先軟化氣氛的那一方，顯示你把關係的平穩看得比「爭對錯」更重要。' },
+        personB:{ code:'直球型', name:'對方', traits:['講話直接','壓力下易急躁','秒讀秒回'],
+          desc:'對方在意見不合時傾向直接說出不滿，不太留白，短期看起來衝，但也代表對方很少把情緒悶著不說。' },
+        conflictFreq:'1.2', conflictUnit:'次爭吵／月',
+        conflictTags:[['行程安排',6],['金錢觀念',4],['家務分配',3],['誰該先道歉',3]],
+        conflictDesc:'衝突高峰多落在週末計畫前後，主因是雙方對「事先講好」的認知不同——你偏好提前規劃，對方偏好隨性決定，這個落差是重複出現的根源，而不是單一事件。',
+        stickerA:{positive:55,neutral:35,negative:10}, stickerB:{positive:40,neutral:38,negative:22},
+        timeline:[
+          ['第1個月','交往初期蜜月期，訊息量與甜度雙高','幾乎每個小時都有訊息往來，內容以分享心情與互相關心為主。','蜜月期的高頻互動是關係初期的正常現象，雙方都在積極投入建立連結。','高頻互動維持約一個月後，逐漸回落到較穩定的日常節奏。'],
+          ['第2個月','第一次為了行程安排起爭執','你想提前規劃週末行程，對方傾向臨時決定，雙方在訊息裡出現語氣變硬的來回。','這不是單一事件，是「規劃型」跟「隨性型」兩種生活習慣第一次正面碰撞，之後會重複出現。','當天晚上由你先傳訊息緩和氣氛，隔天恢復正常互動。'],
+          ['第3個月','磨合期，衝突頻率達到高峰','這個月的爭執次數是分析期間最高的一個月，主題橫跨行程、金錢、家務。','磨合期的衝突頻繁是關係從「表現最好的自己」過渡到「真實日常」的必經過程，不代表關係變差。','衝突後雙方都沒有選擇冷戰，顯示雖然吵得多，但都還在乎這段關係。'],
+          ['第4個月','開始出現「先道歉」的固定模式','幾次爭執後，你開始固定在對話中先釋出軟化訊號，對方則會跟著降溫。','這個模式的形成代表雙方找到了衝突後的默契收尾方式，是關係走向穩定的正面訊號。','此後的爭執平均在同一天內就能化解，不再拖過夜。'],
+          ['第5個月','衝突頻率下降，溫度回穩','爭執次數明顯減少，訊息裡的甜度用詞與日常分享比例回升。','雙方已經摸清彼此在意的點，開始主動避開容易起爭執的溝通方式。','溫度回穩的狀態持續到本次分析，僅金錢話題偶爾還有摩擦。'],
+          ['本次分析','關係進入穩定期，但金錢話題仍偶有摩擦','整體對話基調平穩，僅在提到共同花費時偶爾出現意見不同。','金錢觀念的落差通常需要更明確的溝通機制（例如共同記帳）才能真正解決，光靠磨合可能不夠。','建議關注金錢話題是否會在未來重新升溫成主要衝突點。'],
+        ],
+        personalInsight:'你在關係中常扮演「先低頭」的角色——不是因為你總是理虧，而是你把維持和諧的優先順序排得比堅持立場更高。這讓衝突不會擴大，但長期下來，你可能也在累積一些沒說出口的委屈。',
+        overallInsight:'溫度分數在最近兩次分析持平，代表關係進入穩定期；主導權分布接近五五分，顯示這是一段互相配合、沒有明顯一方在遷就的關係。' },
+      '朋友': {
+        badge:'關係類型：朋友', scoreLabel:'友誼濃度',
+        personA:{ code:'傾聽型', name:'你', traits:['擅長接話','記得小細節','主動關心'],
+          desc:'你很常記得對方隨口提過的小事，並在之後主動問起，這種細膩的關心是這段友誼維持溫度的關鍵。' },
+        personB:{ code:'創意型', name:'對方', traits:['話題跳躍','很少已讀不回','愛傳迷因'],
+          desc:'對方的訊息常常從一個話題跳到完全不相關的另一個，但幾乎不會已讀不回，顯示對方其實很重視這段關係的即時互動。' },
+        conflictFreq:'0.2', conflictUnit:'次冷戰／月',
+        conflictTags:[['約時間喬不攏',4],['開玩笑過頭',2]],
+        conflictDesc:'少數的摩擦多半是「開玩笑尺度」引起的小誤會，通常在同一天內就會有一方主動用哏化解，沒有真正演變成冷戰。',
+        stickerA:{positive:70,neutral:24,negative:6}, stickerB:{positive:66,neutral:28,negative:6},
+        timeline:[
+          ['半年前','聊天頻率一度降到每週不到 5 則','雙方訊息量明顯下滑，多半只剩下轉發迷因或簡短回應。','聊天量下降不一定代表友誼變淡，更常見的原因是雙方當時各自生活忙碌，重心暫時移開。','斷聯狀態持續了約兩個月，期間沒有出現任何不愉快的對話。'],
+          ['4個月前','重新聯絡，聊了一次很長的近況','其中一方主動傳訊息問近況，對話一路從簡短問候聊成長篇分享。','願意花時間補上這段空白，代表雙方都把這段友誼放在「值得花時間維護」的名單上。','這次長聊之後，聊天頻率明顯回升，沒有再次降到之前的低點。'],
+          ['2個月前','一起出去一次，話題明顯變多','線下見面後，接下來幾天的訊息量與話題廣度都比平常高出許多。','實體互動往往能重新激活友誼的熱度，這種「見面後熱度上升」的模式值得留意並多安排。','熱度在見面後持續了約兩週才回到平常水準，但整體基準線比之前更高。'],
+          ['本次分析','即使中間斷聯過，重新聯絡後熱度幾乎沒掉','整體語氣熱度與見面前相比沒有明顯落差，顯示友誼底子穩固。','這段友誼具備「禁得起空白」的特質，代表彼此的信任不依賴頻繁互動來維持。','建議不用因為偶爾斷聯而焦慮，這段關係的韌性已經被驗證過。'],
+        ],
+        personalInsight:'你在這段友誼裡是「記憶保管者」的角色——即使對方話題常跳來跳去，你總能接住並記得，這種穩定的關注是讓這段關係不容易散掉的原因。',
+        overallInsight:'即使中間有一段時間訊息變少，重新聯絡後的語氣熱度幾乎沒有下降，顯示這段友誼禁得起「已讀很久才回」這種考驗。' },
+      '家人': {
+        badge:'關係類型：家人', scoreLabel:'情感連結度',
+        personA:{ code:'穩定型', name:'你', traits:['報備行程','用詞含蓄','很少主動撒嬌'],
+          desc:'你習慣用「到家了」「吃飽了」這類日常回報來維持連結，情緒很少直接說出口，但關心藏在這些瑣碎訊息裡。' },
+        personB:{ code:'傾聽型', name:'對方', traits:['常確認狀態','語氣關心','偶爾碎念'],
+          desc:'對方的訊息大多圍繞在確認你的狀態，偶爾出現的碎念其實是關心的另一種表達方式，而不是單純的嘮叨。' },
+        conflictFreq:'0.5', conflictUnit:'次意見不合／月',
+        conflictTags:[['生活習慣',3],['過度關心的界線',2]],
+        conflictDesc:'摩擦多發生在「關心」被感覺成「管太多」的時候，本質上不是感情問題，是表達方式跟界線認知的落差。',
+        stickerA:{positive:50,neutral:44,negative:6}, stickerB:{positive:58,neutral:36,negative:6},
+        timeline:[
+          ['半年前','固定每週回報行程的習慣開始建立','出現規律的「到家了」「吃飽了」這類報備訊息，頻率大約每週固定幾次。','這種主動報備的習慣，是含蓄表達關心與安全感的方式，即使沒有明說「我在乎你」。','這個習慣一直維持到本次分析，成為雙方溝通的固定基調。'],
+          ['3個月前','一次關於生活習慣的碎念引起小摩擦','對方針對你的作息提出意見，你的回覆語氣明顯變短，出現輕微的抗拒感。','這類摩擦的根源通常是「關心」跟「介入界線」之間的分寸拿捏，不是感情本身出了問題。','摩擦沒有延續超過一天，隔天雙方就恢復平常的互動模式。'],
+          ['1個月前','摩擦後訊息量不減反增，顯示很快就和好','小摩擦後，接下來幾天的報備訊息反而比平常更頻繁。','用「更主動聯絡」而不是冷處理來回應摩擦，顯示雙方都下意識想確認關係沒有受影響。','這個模式強化了彼此的安全感，此後類似的小摩擦影響力都明顯變小。'],
+          ['本次分析','關心與確認式訊息佔比持續偏高，關係穩定','日常報備與關心確認類訊息，占整體對話的比例持續維持在高檔。','這是家人關係裡典型的穩定訊號——不靠深度對話，而是靠持續的日常在場感來維繫連結。','建議偶爾可以多一點直接的情感表達，讓含蓄的關心也能被更清楚地感受到。'],
+        ],
+        personalInsight:'你表達在意的方式很少是直接說「我想你」，而是透過持續回報生活細節——這是含蓄但穩定的依附方式，對方其實接收得到，只是彼此都沒有明講。',
+        overallInsight:'對話大多圍繞在日常瑣事與關心確認，情緒表達佔比不高，但這正是許多家人之間表達在意的方式——藏在瑣碎裡，而不是說出口。' },
+      '同事': {
+        badge:'關係類型：同事', scoreLabel:'合作默契度',
+        personA:{ code:'理性型', name:'你', traits:['條理清楚','公事公辦','準時回覆'],
+          desc:'你的訊息大多結構完整、重點清楚，很少閒聊，顯示你把這段對話單純定位在工作效率上。' },
+        personB:{ code:'直球型', name:'對方', traits:['反應快','偶爾情緒外露','喜歡直接講重點'],
+          desc:'對方在意見不同時會直接表達，不太拐彎，這種直接在時間壓力大的合作場合裡反而能加快決策速度。' },
+        conflictFreq:'0.6', conflictUnit:'次意見分歧／月',
+        conflictTags:[['分工不清楚',4],['deadline 認知落差',3]],
+        conflictDesc:'分歧多發生在專案交接前後，根源是雙方對「誰該做到什麼程度」沒有事先講清楚，屬於流程問題，不是私人恩怨。',
+        stickerA:{positive:35,neutral:55,negative:10}, stickerB:{positive:42,neutral:48,negative:10},
+        timeline:[
+          ['半年前','開始合作第一個專案，訊息以工作事項為主','初期對話幾乎全是任務指派、進度確認，鮮少閒聊。','這是典型的「先建立工作信任、再談交情」模式，效率導向的合作關係初期常見。','工作型對話比例在整個分析期間都維持在高檔，沒有明顯變化。'],
+          ['4個月前','一次分工認知落差，導致進度延遲','雙方對「誰該完成到什麼程度」有不同理解，訊息裡出現多次確認與略顯緊繃的語氣。','這類分歧的根源是流程沒講清楚，不是能力或意願問題，釐清分工機制就能預防再發生。','事件後兩人開始更頻繁地互相確認進度，作為預防機制。'],
+          ['2個月前','開始固定同步進度，摩擦明顯減少','雙方建立起固定的進度同步習慣，訊息裡的確認頻率提高，但語氣更平順。','建立固定溝通機制後，原本容易產生的認知落差被提前化解，這是合作關係成熟的表現。','此後未再出現類似延遲，合作效率明顯提升。'],
+          ['本次分析','溝通效率提升，工作型對話佔比持續偏高','訊息簡潔、重點明確的比例提高，來回確認的次數減少。','這代表雙方已經培養出高效的合作默契，彼此都清楚對方的溝通習慣。','建議如果想讓合作關係更長久，可以偶爾加入一些非工作性質的交流，累積私人信任。'],
+        ],
+        personalInsight:'你在合作中傾向把話講清楚、白紙黑字，這在需要效率的場合是優勢，但也代表你比較少在對話中順帶建立私人交情——這是效率跟關係溫度之間的取捨，沒有對錯，但值得意識到。',
+        overallInsight:'訊息集中在特定時段（多為上班時間），話題聚焦在工作事項，顯示這是一段界線清楚、效率導向的合作關係。' },
+    };
+
+    const relKey = (selectedRelationship && relDeep[selectedRelationship]) ? selectedRelationship : '曖昧';
+    const d = relDeep[relKey];
+    document.getElementById('relTypeBadge').textContent = d.badge;
+
+    // ---- 雙人個性側寫 ----
+    let idxA = Math.floor(Math.random()*personas.length);
+    let idxB;
+    do { idxB = Math.floor(Math.random()*personas.length); } while(idxB===idxA);
+    function profileCard(persona, info){
+      return '<div class="profile-card">'+
+        '<span class="profile-avatar">'+avatarMarkup(persona,44)+'</span>'+
+        '<div class="profile-body">'+
+          '<div class="profile-head"><span class="profile-who">'+info.name+'</span><span class="profile-code">'+info.code+'</span></div>'+
+          '<div class="profile-traits">'+info.traits.map(t=>'<span class="profile-trait">#'+t+'</span>').join('')+'</div>'+
+          '<p class="profile-desc">'+info.desc+'</p>'+
+        '</div></div>';
+    }
+    document.getElementById('profileCards').innerHTML =
+      profileCard(personas[idxA], d.personA) + profileCard(personas[idxB], d.personB);
+
+    // ---- 核心分數 ----
+    const chemScore = 55 + Math.floor(Math.random()*36);
+    document.getElementById('chemLabel').textContent = d.scoreLabel;
+    const totalMsgs = 1800 + Math.floor(Math.random()*3200);
+    document.getElementById('relBasisStat').innerHTML = '本次分析基礎：<b>'+totalMsgs.toLocaleString()+'</b> 則訊息 · 關係類型：'+relKey;
+
+    const circumference = 364.4;
+    const offset = circumference - (chemScore/100)*circumference;
+    const ring = document.getElementById('chemRing');
+    ring.style.transition = 'none';
+    ring.style.strokeDashoffset = circumference;
+    const numEl = document.getElementById('chemNum');
+    numEl.textContent = '0';
+    requestAnimationFrame(()=>{
+      setTimeout(()=>{
+        ring.style.transition = 'stroke-dashoffset 1.2s ease';
+        ring.style.strokeDashoffset = offset;
+        let cur = 0;
+        const step = ()=>{
+          cur += Math.max(1, Math.ceil((chemScore-cur)/6));
+          if(cur>=chemScore){ numEl.textContent = chemScore; return; }
+          numEl.textContent = cur;
+          requestAnimationFrame(step);
+        };
+        step();
+      }, 150);
+    });
+
+    // ---- 衝突頻率與問題點 ----
+    document.getElementById('conflictBox').innerHTML =
+      '<div class="conflict-freq">平均 <b>'+d.conflictFreq+'</b> '+d.conflictUnit+'</div>'+
+      '<div class="conflict-tags">'+d.conflictTags.map(([t,c])=>'<span class="conflict-tag">'+t+'<b>×'+c+'</b></span>').join('')+'</div>'+
+      '<p class="conflict-desc">'+d.conflictDesc+'</p>';
+
+    // ---- 互動指標對比 ----
+    const splitMetrics = [
+      ['主動聊天佔比', 30+Math.floor(Math.random()*41)],
+      ['情緒表達佔比', 30+Math.floor(Math.random()*41)],
+      ['已讀回覆速度', 30+Math.floor(Math.random()*41)],
+      ['話題延續佔比', 30+Math.floor(Math.random()*41)],
+    ];
+    document.getElementById('splitList').innerHTML = splitMetrics.map(([label,pctA])=>{
+      const pctB = 100-pctA;
+      return '<div class="split-item">'+
+        '<div class="split-label-row"><span>'+label+'</span></div>'+
+        '<div class="split-bar"><div class="split-fill-a" style="width:'+pctA+'%"></div><div class="split-fill-b" style="width:'+pctB+'%"></div></div>'+
+        '<div class="split-pct-row"><span>你 '+pctA+'%</span><span>對方 '+pctB+'%</span></div>'+
+        '</div>';
+    }).join('');
+
+    // ---- 高頻字詞（借用其中一個免費版人格的詞頻資料當示範）----
+    const kwSample = personas[Math.floor(Math.random()*personas.length)].keywords;
+    document.getElementById('relKeywords').innerHTML = kwSample.map(([w,c])=>
+      '<div class="kw-chip"><span class="kw-word">'+w+'</span><span class="kw-count">×'+c+'</span></div>'
+    ).join('');
+
+    // ---- 貼圖情緒分析 ----
+    function stickerRow(who, s){
+      return '<div class="sticker-row"><span class="sticker-who">'+who+'</span>'+
+        '<div class="sticker-bar">'+
+          '<div class="sticker-pos" style="width:'+s.positive+'%"></div>'+
+          '<div class="sticker-neu" style="width:'+s.neutral+'%"></div>'+
+          '<div class="sticker-neg" style="width:'+s.negative+'%"></div>'+
+        '</div></div>';
+    }
+    document.getElementById('stickerBox').innerHTML =
+      stickerRow('你', d.stickerA) + stickerRow('對方', d.stickerB) +
+      '<div class="sticker-legend"><span><i class="sticker-dot" style="background:#8fc9a0"></i>正面</span>'+
+      '<span><i class="sticker-dot" style="background:#e0d6c2"></i>中性</span>'+
+      '<span><i class="sticker-dot" style="background:#e08a8a"></i>負面</span></div>';
+
+    // ---- 每月訊息量長條圖 ----
+    const monthlyMsgs = [];
+    for(let i=0;i<6;i++){ monthlyMsgs.push(120 + Math.floor(Math.random()*480)); }
+    const maxMsg = Math.max(...monthlyMsgs);
+    const mw=300, mh=100, mpad=14, barGap=8;
+    const barW = (mw - mpad*2 - barGap*(monthlyMsgs.length-1)) / monthlyMsgs.length;
+    const monthLabelsBar = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
+    let barsSvg = '';
+    monthlyMsgs.forEach((val,i)=>{
+      const barH = (val/maxMsg) * (mh - mpad*2 - 14);
+      const x = mpad + i*(barW+barGap);
+      const y = mh - mpad - barH - 10;
+      barsSvg += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+barH.toFixed(1)+'" rx="3" fill="#cc9a5c" opacity="0.85"/>';
+      barsSvg += '<text x="'+(x+barW/2).toFixed(1)+'" y="'+(y-3).toFixed(1)+'" font-size="7.5" fill="#3a2f52" text-anchor="middle" font-weight="700">'+val+'</text>';
+      barsSvg += '<text x="'+(x+barW/2).toFixed(1)+'" y="'+(mh-2)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+monthLabelsBar[i]+'</text>';
+    });
+    document.getElementById('monthlyChart').innerHTML = barsSvg;
+
+    // ---- 溫度趨勢 ----
+    const trendVals = [];
+    let v = 40+Math.floor(Math.random()*20);
+    for(let i=0;i<6;i++){
+      v = Math.max(20, Math.min(95, v + (Math.random()*24-8)));
+      trendVals.push(Math.round(v));
+    }
+    const w=300,h=100,pad=14;
+    const stepX = (w-pad*2)/(trendVals.length-1);
+    const points = trendVals.map((val,i)=>{
+      const x = pad + i*stepX;
+      const y = h-pad - (val/100)*(h-pad*2);
+      return [x,y];
+    });
+    const pathD = points.map((p,i)=> (i===0?'M':'L')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+    const dots = points.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="#cc9a5c"/>').join('');
+    const monthLabels = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
+    const labelsSvg = points.map((p,i)=>'<text x="'+p[0].toFixed(1)+'" y="'+(h-1)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+monthLabels[i]+'</text>').join('');
+    document.getElementById('trendChart').innerHTML =
+      '<path d="'+pathD+'" fill="none" stroke="#cc9a5c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' + dots + labelsSvg;
+
+    // ---- 關係大事記（AI 偵測＋使用者標記，合併顯示）----
+    const aiEvents = d.timeline.map(([date,text,summary,interp,impact])=>({
+      date, text, source:'ai', summary, interp, impact
+    }));
+    const userEvents = userMilestones.map(m=>({
+      date:m.date, text:m.note, source:'user',
+      summary:'這是你自己標記的時刻，文字紀錄中不一定看得出來。',
+      interp:'根據你標記的「'+m.note+'」，正式版會實際比對這段時間前後的訊息內容，抓出對方語氣與互動節奏的具體轉變，現在先以示範文字呈現。',
+      impact:'標記後的分析，可以幫助你確認「當下感覺到的變化」跟「後續實際的互動模式」是否吻合。',
+    }));
+    const allEvents = aiEvents.concat(userEvents);
+    document.getElementById('relTimeline').innerHTML = allEvents.map((ev,i)=>{
+      const tag = ev.source==='ai' ? '<span class="timeline-source-tag ai">AI 偵測</span>' : '<span class="timeline-source-tag user">你標記</span>';
+      return '<div class="timeline-item'+(ev.source==='user'?' user-marked':'')+'" onclick="toggleTimelineDetail('+i+')">'+
+        '<div class="timeline-date">'+ev.date+tag+'</div>'+
+        '<div class="timeline-text">'+ev.text+'</div>'+
+        '<div class="timeline-expand-hint" id="tlHint'+i+'"><span>AI 解讀＋深入討論</span><span class="chevron">▾</span></div>'+
+        '<div class="timeline-detail" id="tlDetail'+i+'">'+
+          '<div class="timeline-detail-row"><b>對話摘要：</b>'+ev.summary+'</div>'+
+          '<div class="timeline-detail-row"><b>AI 解讀：</b>'+ev.interp+'</div>'+
+          '<div class="timeline-detail-row"><b>後續影響：</b>'+ev.impact+'</div>'+
+          '<div class="tl-chat-thread" id="tlChatThread'+i+'"></div>'+
+          '<div class="chat-followup-row" onclick="event.stopPropagation();">'+
+            '<input type="text" id="tlFollowup'+i+'" placeholder="想補充或想問的，直接打在這裡..." onclick="event.stopPropagation();"/>'+
+            '<button type="button" onclick="event.stopPropagation(); sendFollowup('+i+')">送出</button>'+
+          '</div>'+
+        '</div></div>';
+    }).join('');
+
+    // ---- 你補充的資訊（來自 AI 主動提問）----
+    const answered = aiAnswers.filter(a=>a.answer);
+    const aiAnswersSection = document.getElementById('aiAnswersSection');
+    if(answered.length){
+      aiAnswersSection.style.display = '';
+      document.getElementById('aiAnswersBox').innerHTML = answered.map(a=>
+        '<div class="ai-ask-item"><div class="ai-ask-q"><span class="ai-ask-q-mark">✦</span><span>'+a.question+'</span></div>'+
+        '<p class="profile-desc" style="margin-top:4px;">'+a.answer+'</p></div>'
+      ).join('');
+    } else {
+      aiAnswersSection.style.display = 'none';
+    }
+
+    // ---- 洞察文字 ----
+    let personalText = d.personalInsight;
+    if(answered.length){
+      personalText += '（已納入你補充的 '+answered.length+' 項資訊，正式版會實際用這些內容調整分析結果，目前先以示範文字呈現）';
+    }
+    document.getElementById('personalInsight').textContent = personalText;
+    document.getElementById('relInsight').textContent = d.overallInsight;
+
+    analysisHistory.unshift({ kind:'paid', time:new Date(), relType:relKey, scoreLabel:d.scoreLabel, chemScore:chemScore, messages:totalMsgs });
+  }
+
+  function toggleTimelineDetail(i){
+    const el = document.getElementById('tlDetail'+i);
+    const hint = document.getElementById('tlHint'+i);
+    if(!el) return;
+    const isOpen = el.classList.toggle('show');
+    if(hint) hint.innerHTML = isOpen ? '<span>收合</span><span class="chevron">▾</span>' : '<span>AI 解讀＋深入討論</span><span class="chevron">▾</span>';
+    if(hint) hint.closest('.timeline-item').classList.toggle('expanded', isOpen);
+  }
+
+  function aiReplyTemplate(userText){
+    let text = '';
+    if(userText){
+      const trimmed = userText.length>22 ? userText.slice(0,22)+'…' : userText;
+      text += '關於「'+trimmed+'」，';
+    }
+    text += '從目前掌握的脈絡來看，這類狀況通常是雙方在表達方式上有落差，不一定是誰對誰錯。建議找個平靜的時機直接問對方當時實際的想法，會比自己反覆猜測更清楚。';
+    text += '（示範回覆，正式版會結合你上傳的實際對話內容生成真正對應的分析）';
+    return text;
+  }
+
+  function sendFollowup(i){
+    const inputEl = document.getElementById('tlFollowup'+i);
+    const val = inputEl.value.trim();
+    if(!val) return;
+    const thread = document.getElementById('tlChatThread'+i);
+    const sendBtn = inputEl.nextElementSibling;
+
+    const userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble user';
+    userBubble.innerHTML = '<b>你</b><p>'+val+'</p>';
+    thread.appendChild(userBubble);
+    inputEl.value = '';
+    inputEl.disabled = true;
+    if(sendBtn) sendBtn.disabled = true;
+
+    const typingEl = document.createElement('div');
+    typingEl.className = 'chat-typing';
+    typingEl.innerHTML = '<span></span><span></span><span></span>';
+    thread.appendChild(typingEl);
+    typingEl.scrollIntoView({block:'nearest', behavior:'smooth'});
+
+    const delay = 900 + Math.random()*700;
+    setTimeout(()=>{
+      typingEl.remove();
+      const aiBubble = document.createElement('div');
+      aiBubble.className = 'chat-bubble ai';
+      aiBubble.innerHTML = '<b>AI</b><p>'+aiReplyTemplate(val)+'</p>';
+      thread.appendChild(aiBubble);
+      inputEl.disabled = false;
+      if(sendBtn) sendBtn.disabled = false;
+    }, delay);
+  }
+
+  function exitPaidUploadMode(){
+    paidMode = false;
+    document.querySelector('[data-screen="upload"] .eyebrow').textContent = 'STEP 1 · 上傳你的對話';
+    document.querySelector('[data-screen="upload"] .section-title').innerHTML = '選一種方式，<br/>開始分析你的聊天紀錄';
+    document.getElementById('ageFieldWrap').style.display = '';
+    document.getElementById('milestoneFieldWrap').style.display = 'none';
+    document.getElementById('consentTrain').closest('.consent-item').style.display = '';
+    startBtn.textContent = '開始分析';
+    userMilestones = [];
+    aiAnswers = [];
+    renderMilestoneList();
+  }
+
+  // ---------- 重要時刻標記（付費版）----------
+  let userMilestones = [];
+  let aiAnswers = [];
+  function addMilestone(){
+    const dateEl = document.getElementById('milestoneDate');
+    const noteEl = document.getElementById('milestoneNote');
+    const date = dateEl.value.trim();
+    const note = noteEl.value.trim();
+    if(!date || !note){
+      dateEl.classList.toggle('field-error', !date);
+      noteEl.classList.toggle('field-error', !note);
+      setTimeout(()=>{ dateEl.classList.remove('field-error'); noteEl.classList.remove('field-error'); }, 1200);
+      return;
+    }
+    userMilestones.push({date, note});
+    dateEl.value = ''; noteEl.value = '';
+    renderMilestoneList();
+  }
+  function removeMilestone(i){
+    userMilestones.splice(i,1);
+    renderMilestoneList();
+  }
+  function renderMilestoneList(){
+    const el = document.getElementById('milestoneList');
+    if(!el) return;
+    el.innerHTML = userMilestones.map((m,i)=>
+      '<div class="milestone-chip"><b>'+m.date+'</b><span>'+m.note+'</span><button type="button" onclick="removeMilestone('+i+')">✕</button></div>'
+    ).join('');
+  }
+
+  function ringSvg(label, val, accent){
+    const r = 20, c = 2*Math.PI*r;
+    const offset = c - (val/100)*c;
+    return '<div class="ring-item"><svg viewBox="0 0 48 48">'+
+      '<circle class="ring-bg" cx="24" cy="24" r="'+r+'"/>'+
+      '<circle class="ring-fg" cx="24" cy="24" r="'+r+'" stroke="'+accent+'" stroke-dasharray="'+c+'" stroke-dashoffset="'+c+'" transform="rotate(-90 24 24)" data-offset="'+offset+'"/>'+
+      '<text class="ring-num" x="24" y="28">'+val+'</text></svg><span class="ring-label">'+label+'</span></div>';
+  }
+
+  function prepareCard(){
+    const card = document.getElementById('tarotCard');
+    card.classList.remove('flipped');
+    document.getElementById('resultBody').classList.remove('show');
+    currentPersona = personas[Math.floor(Math.random()*personas.length)];
+    document.getElementById('tarotFront').innerHTML =
+      '<span class="tf-badge">'+avatarMarkup(currentPersona,58)+'</span>'+
+      '<span class="tf-code">'+currentPersona.code+'</span>'+
+      '<span class="tf-name">'+currentPersona.name+'</span>'+
+      '<span class="tf-en">'+currentPersona.en+'</span>'+
+      '<span class="tf-rule"></span>'+
+      '<span class="tf-line">'+currentPersona.sub+'</span>';
+  }
+
+  function flipCard(){
+    const card = document.getElementById('tarotCard');
+    if(card.classList.contains('flipped')) return;
+    card.classList.add('flipped');
+    setTimeout(renderResult, 500);
+  }
+
+  function renderResult(){
+    const p = currentPersona;
+    document.getElementById('resultTitle').textContent = p.code+' · '+p.name;
+    document.getElementById('resultSub').textContent = p.en;
+    document.getElementById('basisStat').innerHTML = '本次分析基礎：<b>'+p.messages.toLocaleString()+'</b> 則訊息';
+    document.getElementById('resultDesc').textContent = p.desc;
+    document.getElementById('resultTags').innerHTML = p.tags.map(t=>'<span class="tag">'+t+'</span>').join('');
+    document.getElementById('resultRings').innerHTML = p.scores.map(([label,val])=>ringSvg(label,val,p.accent)).join('');
+    document.getElementById('resultKeywords').innerHTML = p.keywords.map(([w,c])=>
+      '<div class="kw-chip"><span class="kw-word">'+w+'</span><span class="kw-count">×'+c+'</span></div>'
+    ).join('');
+
+    // ---- 每月句數統計（純算法，不用 AI）----
+    const sentenceCounts = [];
+    for(let i=0;i<6;i++){ sentenceCounts.push(80 + Math.floor(Math.random()*260)); }
+    const maxS = Math.max(...sentenceCounts);
+    const sw=300, sh=100, spad=14, sBarGap=8;
+    const sBarW = (sw - spad*2 - sBarGap*(sentenceCounts.length-1)) / sentenceCounts.length;
+    const sMonthLabels = ['5個月前','4個月前','3個月前','2個月前','上次','本次'];
+    let sBarsSvg = '';
+    sentenceCounts.forEach((val,i)=>{
+      const barH = (val/maxS) * (sh - spad*2 - 14);
+      const x = spad + i*(sBarW+sBarGap);
+      const y = sh - spad - barH - 10;
+      sBarsSvg += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+sBarW.toFixed(1)+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+p.accent+'" opacity="0.9"/>';
+      sBarsSvg += '<text x="'+(x+sBarW/2).toFixed(1)+'" y="'+(y-3).toFixed(1)+'" font-size="7.5" fill="#3a2f52" text-anchor="middle" font-weight="700">'+val+'</text>';
+      sBarsSvg += '<text x="'+(x+sBarW/2).toFixed(1)+'" y="'+(sh-2)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+sMonthLabels[i]+'</text>';
+    });
+    document.getElementById('sentenceChart').innerHTML = sBarsSvg;
+
+    // ---- 每月訊息則數（純算法，不用 AI）----
+    const freqCounts = [];
+    const freqBase = Math.round(p.messages / 6);
+    for(let i=0;i<6;i++){ freqCounts.push(Math.max(20, freqBase + Math.floor((Math.random()-0.5)*freqBase*0.8))); }
+    const maxF = Math.max(...freqCounts);
+    const fw=300, fh=100, fpad=14, fBarGap=8;
+    const fBarW = (fw - fpad*2 - fBarGap*(freqCounts.length-1)) / freqCounts.length;
+    let fBarsSvg = '';
+    freqCounts.forEach((val,i)=>{
+      const barH = (val/maxF) * (fh - fpad*2 - 14);
+      const x = fpad + i*(fBarW+fBarGap);
+      const y = fh - fpad - barH - 10;
+      fBarsSvg += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+fBarW.toFixed(1)+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+p.accent+'" opacity="0.65"/>';
+      fBarsSvg += '<text x="'+(x+fBarW/2).toFixed(1)+'" y="'+(y-3).toFixed(1)+'" font-size="7.5" fill="#3a2f52" text-anchor="middle" font-weight="700">'+val+'</text>';
+      fBarsSvg += '<text x="'+(x+fBarW/2).toFixed(1)+'" y="'+(fh-2)+'" font-size="7" fill="#afa3c9" text-anchor="middle">'+sMonthLabels[i]+'</text>';
+    });
+    document.getElementById('freqChart').innerHTML = fBarsSvg;
+
+    document.getElementById('resultInsight').textContent = p.insight;
+    document.getElementById('resultBody').classList.add('show');
+    requestAnimationFrame(()=>{
+      setTimeout(()=>{ document.querySelectorAll('.ring-fg').forEach(f=>{ f.style.strokeDashoffset = f.dataset.offset; }); }, 120);
+    });
+
+    unlockedPersonaAvatars.add(p.avatar);
+    analysisHistory.unshift({ kind:'free', time:new Date(), code:p.code, name:p.name, avatar:p.avatar, accent:p.accent, messages:p.messages });
+  }
+
+  function restart(){
+    if(paidMode) exitPaidUploadMode();
+    selectedMethod = null; hasInput = false; selectedAge = null;
+    document.querySelectorAll('.method-card').forEach(c=>c.classList.remove('selected'));
+    document.querySelectorAll('.age-pill').forEach(c=>{c.classList.remove('selected'); c.classList.remove('blocked');});
+    ageBlockMsg.classList.remove('show');
+    document.querySelectorAll('.consent-item input[type="checkbox"]').forEach(c=>c.checked=false);
+    inputArea.innerHTML = '<div class="input-hint">先選擇上面其中一種方式</div>';
+    updateStartBtn();
+    goTo('landing');
+  }
+
+  // ---------- 付費彈窗（含關係選擇）----------
+  let selectedRelationship = null;
+  document.querySelectorAll('.rel-pill').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      selectedRelationship = btn.dataset.rel;
+      document.querySelectorAll('.rel-pill').forEach(b=>b.classList.toggle('selected', b===btn));
+    });
+  });
+  function showPaywall(){ document.getElementById('paywallOverlay').classList.add('show'); }
+  function hidePaywall(e){ document.getElementById('paywallOverlay').classList.remove('show'); }
+
+  // ---------- 付款頁 ----------
+  function goToPayment(){
+    hidePaywall();
+    document.getElementById('orderRelType').textContent =
+      '關係類型：' + (selectedRelationship ? selectedRelationship : '尚未選擇（可返回補選）');
+    goTo('payment');
+  }
+
+  // ---------- 藍新金流收銀台（模擬跳轉頁）----------
+  let currentNpayTab = 'card';
+  function initNpayCheckout(){
+    const orderId = 'DEMO' + Date.now().toString().slice(-9);
+    document.getElementById('npayOrderId').textContent = orderId;
+    selectNpayTab('card');
+  }
+  function selectNpayTab(tab){
+    currentNpayTab = tab;
+    const errEl = document.getElementById('npayError');
+    if(errEl) errEl.textContent = '';
+    document.querySelectorAll('.npay-tab').forEach(b=>b.classList.toggle('selected', b.dataset.tab===tab));
+    const el = document.getElementById('npayTabContent');
+    if(tab==='card'){
+      el.innerHTML =
+        '<div class="npay-field-group">'+
+          '<div class="npay-field"><label>卡號</label><input type="text" id="npayCardNumber" placeholder="4242 4242 4242 4242" maxlength="19"></div>'+
+          '<div class="npay-field-row">'+
+            '<div class="npay-field"><label>有效期限 (MM/YY)</label><input type="text" id="npayCardExpiry" placeholder="MM/YY" maxlength="5"></div>'+
+            '<div class="npay-field"><label>安全碼 CVV</label><input type="text" id="npayCardCvv" placeholder="123" maxlength="3"></div>'+
+          '</div>'+
+          '<div class="npay-field"><label>持卡人姓名</label><input type="text" id="npayCardName" placeholder="請輸入信用卡上的英文姓名"></div>'+
+        '</div>';
+    } else if(tab==='atm'){
+      const acct = '822-' + Math.floor(1000000 + Math.random()*9000000);
+      el.innerHTML =
+        '<div class="npay-atm-box">'+
+          '<p>請於期限內使用網路銀行或 ATM 轉帳至下方藍新虛擬帳號：</p>'+
+          '<div class="npay-atm-code">'+acct+'</div>'+
+          '<p>繳費期限：24 小時內．金額：NT$99。轉帳完成後系統會自動比對入帳並解鎖報告，不需要回報或截圖。</p>'+
+        '</div>';
+    } else if(tab==='cvs'){
+      const code = Math.floor(1000000000 + Math.random()*8999999999);
+      el.innerHTML =
+        '<div class="npay-cvs-box">'+
+          '<p>請至四大超商繳費機輸入以下代碼完成付款：</p>'+
+          '<div class="npay-atm-code">'+code+'</div>'+
+          '<p>繳費期限：3 天內．金額：NT$99。超商繳費完成後系統會自動確認並解鎖報告。</p>'+
+        '</div>';
+    }
+  }
+
+  function confirmPayment(){
+    const errEl = document.getElementById('npayError');
+    if(currentNpayTab === 'card'){
+      const num = document.getElementById('npayCardNumber').value.trim();
+      const exp = document.getElementById('npayCardExpiry').value.trim();
+      const cvv = document.getElementById('npayCardCvv').value.trim();
+      const name = document.getElementById('npayCardName').value.trim();
+      if(!num || !exp || !cvv || !name){
+        if(errEl) errEl.textContent = '⚠ 請填寫完整的卡號、有效期限、安全碼與持卡人姓名';
+        return;
+      }
+    }
+    if(errEl) errEl.textContent = '';
+    enterPaidUploadMode();
+    goTo('upload');
+  }
+
+  // ---------- 付款完成後：切換上傳頁為「雙人關係」模式 ----------
+  function enterPaidUploadMode(){
+    paidMode = true;
+    selectedMethod = null; hasInput = false;
+    document.querySelectorAll('.method-card').forEach(c=>c.classList.remove('selected'));
+    inputArea.innerHTML = '<div class="input-hint">先選擇上面其中一種方式</div>';
+    document.querySelector('[data-screen="upload"] .eyebrow').textContent = 'STEP 3 · 上傳你們的對話';
+    document.querySelector('[data-screen="upload"] .section-title').innerHTML = '付款完成！<br/>上傳你們兩人的對話';
+    document.getElementById('ageFieldWrap').style.display = 'none';
+    document.getElementById('milestoneFieldWrap').style.display = '';
+    document.getElementById('consentTrain').closest('.consent-item').style.display = 'none';
+    document.getElementById('consentTrain').checked = true;
+    document.getElementById('consentOther').checked = false;
+    document.getElementById('consentAnalyze').checked = false;
+    startBtn.textContent = '開始分析雙人關係';
+    updateStartBtn();
+  }
+</script>
+</body>
+</html>
