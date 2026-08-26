@@ -67,7 +67,47 @@ https://chat-persona-api.<你的 subdomain>.workers.dev
 
 複製這個網址。
 
-## 3. 讓前端接上這個網址
+## 3. 設定訂單管理後台（D1 資料庫 + 後台密碼）
+
+訂單管理後台（`admin.html`）需要一個資料庫來存客戶／商品／訂單，用 Cloudflare 的 **D1**（免費額度很夠個人使用）。
+
+### 3.1 建立資料庫
+
+**有終端機：**
+
+```bash
+cd worker
+npx wrangler d1 create chat-persona-db
+```
+
+會印出一段 `database_id`，把它貼到 `worker/wrangler.toml` 裡 `[[d1_databases]]` 那段，取代 `REPLACE_WITH_YOUR_D1_DATABASE_ID`。接著建資料表：
+
+```bash
+npx wrangler d1 execute chat-persona-db --remote --file=./schema.sql
+```
+
+**沒有終端機（網頁操作）：**
+
+1. Cloudflare Dashboard 左側選單找 **Workers & Pages** → **D1**（或 **D1 SQL Database**）
+2. 點 **Create database**，取名 `chat-persona-db`，建立
+3. 進到這個資料庫頁面，找 **Console**（可以直接貼 SQL 執行的地方）
+4. 打開這個 repo 裡的 `worker/schema.sql`，複製全部內容，貼到 Console 執行
+5. 回到你的 Worker（`chat-persona-api`）→ **Settings** → **Bindings** → 新增一個 **D1 Database** binding：
+   - Variable name 填 `DB`（要完全一樣）
+   - 選你剛建立的 `chat-persona-db`
+   - 儲存（可能需要重新部署一次）
+
+### 3.2 設定後台密碼
+
+這個後台只有你自己用，用一組密碼保護就好（不是多人帳號系統）：
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+```
+
+沒終端機的話，一樣在 **Settings → Variables and Secrets** 新增一筆 `ADMIN_PASSWORD`（類型選 Secret），值是你自己設定的密碼。
+
+## 4. 讓前端接上這個網址
 
 打開 repo 根目錄的 `index.html`，找到這一行（在 `<script>` 區塊靠前面的地方）：
 
@@ -81,7 +121,30 @@ const API_BASE = '';
 const API_BASE = 'https://chat-persona-api.<你的 subdomain>.workers.dev';
 ```
 
-存檔、commit、push（或直接編輯 GitHub 上的檔案），GitHub Pages 會自動重新部署。這樣「上傳對話 → 開始分析」就會真的呼叫 Claude 分析你貼上或上傳的內容，不再是固定的範例結果。
+**`admin.html`（訂單後台）也要做一樣的事**——打開 `admin.html`，把裡面的 `const API_BASE = '';` 改成同一個 Worker 網址。
+
+存檔、commit、push（或直接編輯 GitHub 上的檔案），GitHub Pages 會自動重新部署。之後打開你網站網址加上 `/admin.html`（例如 `https://your-user.github.io/chat-persona/admin.html`）就能進到訂單後台，用剛剛設定的 `ADMIN_PASSWORD` 登入。
+
+## 5.（選用）串接藍新金流真實付款
+
+前面步驟做完，訂單後台已經可以手動建立訂單、手動標記已付款，拿來記帳、管理客戶完全夠用。如果想要**使用者自己按「付款」就真的能刷卡扣款**，才需要這一步——而且前提是你已經申請到藍新金流的**特約商店資格**（見專案主 README 或問我要申請流程）。
+
+拿到資格後，藍新後台會給你三個值：
+
+```bash
+npx wrangler secret put NEWEBPAY_MERCHANT_ID   # 商店代號
+npx wrangler secret put NEWEBPAY_HASH_KEY      # 32 字元
+npx wrangler secret put NEWEBPAY_HASH_IV       # 16 字元
+```
+
+另外設定兩個一般變數（不是密鑰，可以用 Settings 裡的一般 Variable，或 `wrangler secret put` 也可以）：
+
+- `NEWEBPAY_RETURN_URL` — 使用者付款完成後，瀏覽器會被導回的網址（通常是你網站的一個「付款完成」頁面）
+- `NEWEBPAY_NOTIFY_URL` — 藍新伺服器對伺服器通知付款結果的網址，填這個 Worker 本身的 `/webhook/newebpay`，例如 `https://chat-persona-api.<你的 subdomain>.workers.dev/webhook/newebpay`
+
+設定好之後，後台的「前往付款」流程會呼叫 `POST /admin/create-payment`，回傳把使用者導去藍新收銀台需要的參數；藍新那邊付款完成後會呼叫 `NEWEBPAY_NOTIFY_URL`，Worker 會自動驗證簽章、把對應訂單標記為已付款。
+
+⚠️ `worker/src/newebpay.js` 裡的加解密／簽章演算法是照藍新 MPG API 標準文件寫的，且已經用假金鑔做過完整的加密/解密/簽章驗證測試（確認邏輯正確），但正式串接前，請對照你拿到的藍新官方文件（欄位名稱、正式/測試環境網址）再確認一次，避免版本差異。
 
 ## 本機測試（不需要先部署）
 
@@ -91,10 +154,17 @@ npm install
 npx wrangler dev
 ```
 
-會在 `http://localhost:8787` 起一個本機版的 API，這時候可以把前端的 `API_BASE` 暫時指向 `http://localhost:8787` 來測試（記得測試完要換回正式網址）。第一次要先照上面步驟 3 設定好本機的 `.dev.vars`（或用 `wrangler secret put` 也會被本機開發模式讀到）：
+會在 `http://localhost:8787` 起一個本機版的 API，這時候可以把前端的 `API_BASE` 暫時指向 `http://localhost:8787` 來測試（記得測試完要換回正式網址）。第一次要先設定好本機的 `.dev.vars`：
 
 ```bash
 echo 'ANTHROPIC_API_KEY=sk-ant-你的金鑰' > .dev.vars
+echo 'ADMIN_PASSWORD=你自己設定的後台密碼' >> .dev.vars
+```
+
+本機的 D1 資料庫會自動建立在 `.wrangler/` 底下（不會動到雲端的正式資料庫），第一次要先建表：
+
+```bash
+npx wrangler d1 execute DB --local --file=./schema.sql
 ```
 
 ## API 端點
@@ -116,6 +186,16 @@ echo 'ANTHROPIC_API_KEY=sk-ant-你的金鑰' > .dev.vars
 - `POST /timeline-followup` — 時間軸事件的追問對話
   - 輸入：`{ event: {date,title,summary,interpretation}, question: string, text?: string }`
   - 輸出：`{ reply: string }`
+
+以下是訂單管理後台用的端點，除了 `/admin/login`，其他都要在 header 帶 `Authorization: Bearer <token>`（登入後拿到的 token）：
+
+- `POST /admin/login` — `{ password }` → `{ token }`
+- `GET /admin/dashboard` — 本月營收、已付款訂單數、待付款訂單數、最新 8 筆訂單
+- `GET /admin/customers` / `POST /admin/customers` / `PATCH /admin/customers/:id` / `DELETE /admin/customers/:id`
+- `GET /admin/products` / `POST /admin/products` / `PATCH /admin/products/:id` / `DELETE /admin/products/:id`
+- `GET /admin/orders`（可加 `?status=pending` 篩選）/ `POST /admin/orders` / `PATCH /admin/orders/:id/status`（`{ status: 'pending'|'paid'|'failed'|'cancelled' }`）
+- `POST /admin/create-payment` — `{ orderId }`，回傳藍新收銀台需要的參數（需要先設定好 `NEWEBPAY_*` 金鑰）
+- `POST /webhook/newebpay` — 藍新伺服器對伺服器的付款通知（不是給前端呼叫的，藍新後台設定 Notify URL 指到這裡）
 
 ## 費用與額度
 

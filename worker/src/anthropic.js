@@ -15,6 +15,7 @@ async function postToAnthropic(apiKey, body) {
     const errText = await res.text().catch(() => '');
     const err = new Error('Anthropic API error ' + res.status + ': ' + errText.slice(0, 500));
     err.status = res.status;
+    err.isUpstream = true;
     throw err;
   }
   return res.json();

@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>訂單管理後台 · Chat Persona</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg1:#fcf8f4; --bg2:#f1e8fb; --panel:#ffffff; --panel-soft:#faf6ff;
+    --ink:#3a2f52; --ink-soft:#7c6f97; --ink-dim:#afa3c9;
+    --gold:#cc9a5c; --gold-soft:#e8c994; --line: rgba(120,95,170,0.16);
+    --shadow: 0 12px 30px rgba(120,90,160,0.12);
+    --ok:#3a8f5c; --warn:#cc9a5c; --bad:#c0546b;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    min-height:100vh; background:linear-gradient(180deg, var(--bg1), #fdfbf8);
+    font-family:"Noto Sans TC", sans-serif; color:var(--ink-soft);
+  }
+  h1,h2,h3{ font-family:"Noto Serif TC", serif; color:var(--ink); margin:0; }
+  .hidden{ display:none !important; }
+
+  /* ---- Login ---- */
+  #loginScreen{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .login-card{
+    width:100%; max-width:340px; background:var(--panel); border:1px solid var(--line);
+    border-radius:20px; padding:32px 26px; box-shadow:var(--shadow); text-align:center;
+  }
+  .login-card h1{ font-size:20px; margin-bottom:6px; }
+  .login-card p{ font-size:12.5px; color:var(--ink-dim); margin-bottom:20px; }
+  .login-card input{
+    width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:12px;
+    font-size:14px; margin-bottom:12px; font-family:inherit; color:var(--ink);
+  }
+  .btn{
+    appearance:none; border:none; cursor:pointer; font-family:"Noto Sans TC", sans-serif;
+    font-weight:700; font-size:14px; border-radius:10px; padding:11px 18px;
+    background:linear-gradient(135deg, var(--gold-soft), var(--gold)); color:#3a2205;
+    transition:opacity .15s ease;
+  }
+  .btn:hover{ opacity:.9; }
+  .btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink-soft); }
+  .btn-small{ padding:6px 12px; font-size:12px; border-radius:8px; }
+  .btn-danger{ background:var(--bad); color:#fff; }
+  .btn-full{ width:100%; }
+  .error-text{ color:var(--bad); font-size:12.5px; min-height:16px; margin-bottom:8px; }
+
+  /* ---- App shell ---- */
+  #app{ display:none; }
+  #app.show{ display:block; }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; padding:14px 20px;
+    background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;
+  }
+  .topbar h1{ font-size:16px; }
+  .tabs{ display:flex; gap:6px; padding:14px 20px 0; flex-wrap:wrap; }
+  .tab-btn{
+    appearance:none; border:1px solid var(--line); background:var(--panel-soft); color:var(--ink-soft);
+    border-radius:999px; padding:8px 16px; font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  .tab-btn.active{ background:var(--gold); color:#3a2205; border-color:var(--gold); font-weight:700; }
+  main{ padding:18px 20px 60px; max-width:1000px; margin:0 auto; }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .stat-row{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:22px; }
+  .stat-card{
+    flex:1; min-width:140px; background:var(--panel); border:1px solid var(--line);
+    border-radius:16px; padding:16px 18px; box-shadow:var(--shadow);
+  }
+  .stat-card .num{ font-family:"Noto Serif TC", serif; font-size:26px; color:var(--gold); font-weight:900; }
+  .stat-card .label{ font-size:12px; color:var(--ink-dim); margin-top:2px; }
+
+  table{ width:100%; border-collapse:collapse; background:var(--panel); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); }
+  th, td{ text-align:left; padding:10px 12px; font-size:12.5px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th{ background:var(--panel-soft); color:var(--ink-dim); font-weight:700; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .table-wrap{ overflow-x:auto; }
+
+  .badge{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+  .badge.pending{ background:rgba(204,154,92,0.16); color:var(--warn); }
+  .badge.paid{ background:rgba(58,143,92,0.14); color:var(--ok); }
+  .badge.failed, .badge.cancelled{ background:rgba(192,84,107,0.14); color:var(--bad); }
+
+  .section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+  .filter-row{ display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(60,45,90,0.35); display:flex; align-items:center; justify-content:center;
+    padding:20px; z-index:50;
+  }
+  .modal-card{
+    width:100%; max-width:380px; background:var(--panel); border-radius:18px; padding:22px 20px;
+    box-shadow:var(--shadow); max-height:90vh; overflow-y:auto;
+  }
+  .modal-card h2{ font-size:16px; margin-bottom:14px; }
+  .field-label{ font-size:11.5px; color:var(--ink-dim); margin:10px 0 5px; }
+  .field-label:first-child{ margin-top:0; }
+  input, select, textarea{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+    font-size:13.5px; font-family:inherit; color:var(--ink); background:var(--panel);
+  }
+  .modal-actions{ display:flex; gap:8px; margin-top:18px; }
+  .modal-actions .btn{ flex:1; }
+  .row-actions{ display:flex; gap:6px; }
+  .empty-hint{ text-align:center; color:var(--ink-dim); font-size:13px; padding:30px 10px; }
+  .config-note{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+    font-size:12px; color:var(--ink-soft); line-height:1.6; margin-bottom:16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>訂單管理後台</h1>
+    <p>Chat Persona · 只有你自己看得到</p>
+    <p class="error-text" id="loginError"></p>
+    <input type="password" id="loginPassword" placeholder="輸入後台密碼" />
+    <button class="btn btn-full" onclick="login()">登入</button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <h1>Chat Persona 後台</h1>
+    <button class="btn btn-ghost btn-small" onclick="logout()">登出</button>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dashboard" onclick="showTab('dashboard')">總覽</button>
+    <button class="tab-btn" data-tab="orders" onclick="showTab('orders')">訂單</button>
+    <button class="tab-btn" data-tab="customers" onclick="showTab('customers')">客戶</button>
+    <button class="tab-btn" data-tab="products" onclick="showTab('products')">商品／方案</button>
+  </div>
+
+  <main>
+    <!-- Dashboard -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="stat-row">
+        <div class="stat-card"><div class="num" id="statRevenue">-</div><div class="label">本月營收 (NT$)</div></div>
+        <div class="stat-card"><div class="num" id="statPaid">-</div><div class="label">本月已付款訂單</div></div>
+        <div class="stat-card"><div class="num" id="statPending">-</div><div class="label">待付款訂單</div></div>
+      </div>
+      <h3 style="margin-bottom:10px;">最新訂單</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>訂單編號</th><th>客戶</th><th>商品</th><th>金額</th><th>狀態</th><th>時間</th></tr></thead>
+        <tbody id="recentOrdersBody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- Orders -->
+    <div class="panel" id="panel-orders">
+      <div class="section-head">
+        <h2>訂單管理</h2>
+        <button class="btn btn-small" onclick="openOrderModal()">＋ 新增訂單</button>
+      </div>
+      <div class="filter-row">
+        <button class="tab-btn active" data-status="" onclick="filterOrders('')">全部</button>
+        <button class="tab-btn" data-status="pending" onclick="filterOrders('pending')">待付款</button>
+        <button class="tab-btn" data-status="paid" onclick="filterOrders('paid')">已付款</button>
+        <button class="tab-btn" data-status="failed" onclick="filterOrders('failed')">失敗</button>
+        <button class="tab-btn" data-status="cancelled" onclick="filterOrders('cancelled')">已取消</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>訂單編號</th><th>客戶</th><th>商品</th><th>金額</th><th>狀態</th><th>付款方式</th><th>建立時間</th><th>操作</th></tr></thead>
+        <tbody id="ordersBody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- Customers -->
+    <div class="panel" id="panel-customers">
+      <div class="section-head">
+        <h2>客戶管理</h2>
+        <button class="btn btn-small" onclick="openCustomerModal()">＋ 新增客戶</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>姓名</th><th>聯絡方式</th><th>備註</th><th>建立時間</th><th>操作</th></tr></thead>
+        <tbody id="customersBody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- Products -->
+    <div class="panel" id="panel-products">
+      <div class="section-head">
+        <h2>商品／訂閱方案</h2>
+        <button class="btn btn-small" onclick="openProductModal()">＋ 新增方案</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>名稱</th><th>價格</th><th>週期</th><th>狀態</th><th>操作</th></tr></thead>
+        <tbody id="productsBody"></tbody>
+      </table></div>
+    </div>
+  </main>
+</div>
+
+<!-- Order modal -->
+<div class="modal-overlay hidden" id="orderModal">
+  <div class="modal-card">
+    <h2>新增訂單</h2>
+    <div class="field-label">客戶</div>
+    <select id="orderCustomerSelect"></select>
+    <div class="field-label">商品／方案</div>
+    <select id="orderProductSelect" onchange="onOrderProductChange()"></select>
+    <div class="field-label">金額 (NT$)</div>
+    <input type="number" id="orderAmount" />
+    <div class="field-label">備註（選填）</div>
+    <textarea id="orderNote" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('orderModal')">取消</button>
+      <button class="btn" onclick="submitOrder()">建立</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customer modal -->
+<div class="modal-overlay hidden" id="customerModal">
+  <div class="modal-card">
+    <h2 id="customerModalTitle">新增客戶</h2>
+    <div class="field-label">姓名</div>
+    <input type="text" id="customerName" />
+    <div class="field-label">聯絡方式（選填）</div>
+    <input type="text" id="customerContact" placeholder="例如 LINE ID、電話" />
+    <div class="field-label">備註（選填）</div>
+    <textarea id="customerNote" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('customerModal')">取消</button>
+      <button class="btn" onclick="submitCustomer()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product modal -->
+<div class="modal-overlay hidden" id="productModal">
+  <div class="modal-card">
+    <h2 id="productModalTitle">新增方案</h2>
+    <div class="field-label">名稱</div>
+    <input type="text" id="productName" />
+    <div class="field-label">價格 (NT$)</div>
+    <input type="number" id="productPrice" />
+    <div class="field-label">計費週期</div>
+    <select id="productCycle">
+      <option value="one_time">單次</option>
+      <option value="monthly">月繳</option>
+      <option value="yearly">年繳</option>
+    </select>
+    <div class="field-label">狀態</div>
+    <select id="productActive">
+      <option value="1">上架中</option>
+      <option value="0">已下架</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('productModal')">取消</button>
+      <button class="btn" onclick="submitProduct()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 部署好 Cloudflare Worker 後，把這行換成你的 Worker 網址（跟 index.html 裡的 API_BASE 一樣）
+  const API_BASE = '';
+
+  let token = localStorage.getItem('cp_admin_token') || '';
+  let editingCustomerId = null;
+  let editingProductId = null;
+  let customersCache = [];
+  let productsCache = [];
+  let currentOrderFilter = '';
+
+  async function api(path, options){
+    if(!API_BASE){ throw new Error('尚未設定 API_BASE，請參考 worker/README.md'); }
+    const headers = Object.assign({ 'content-type':'application/json' }, (options && options.headers) || {});
+    if(token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(API_BASE + path, Object.assign({}, options, { headers }));
+    let data = {};
+    try{ data = await res.json(); } catch{}
+    if(res.status === 401 && path !== '/admin/login'){ logout(); throw new Error('登入已過期，請重新登入'); }
+    if(!res.ok) throw new Error(data.error || ('伺服器錯誤 ' + res.status));
+    return data;
+  }
+
+  async function login(){
+    const pw = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    try{
+      const data = await api('/admin/login', { method:'POST', body: JSON.stringify({ password: pw }) });
+      token = data.token;
+      localStorage.setItem('cp_admin_token', token);
+      enterApp();
+    }catch(err){
+      errEl.textContent = err.message || '登入失敗';
+    }
+  }
+
+  function logout(){
+    token = '';
+    localStorage.removeItem('cp_admin_token');
+    document.getElementById('app').classList.remove('show');
+    document.getElementById('loginScreen').style.display = 'flex';
+  }
+
+  function enterApp(){
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').classList.add('show');
+    loadDashboard();
+  }
+
+  function showTab(name){
+    document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+    if(name === 'dashboard') loadDashboard();
+    if(name === 'orders') loadOrders();
+    if(name === 'customers') loadCustomers();
+    if(name === 'products') loadProducts();
+  }
+
+  function statusLabel(s){
+    return { pending:'待付款', paid:'已付款', failed:'失敗', cancelled:'已取消' }[s] || s;
+  }
+
+  function fmtMoney(n){ return Number(n||0).toLocaleString(); }
+
+  async function loadDashboard(){
+    try{
+      const d = await api('/admin/dashboard');
+      document.getElementById('statRevenue').textContent = fmtMoney(d.monthlyRevenue);
+      document.getElementById('statPaid').textContent = d.monthlyPaidOrders;
+      document.getElementById('statPending').textContent = d.pendingOrders;
+      document.getElementById('recentOrdersBody').innerHTML = (d.recentOrders||[]).map(o => `
+        <tr>
+          <td>${o.order_no}</td>
+          <td>${o.customer_name || '-'}</td>
+          <td>${o.product_name || '-'}</td>
+          <td>NT$${fmtMoney(o.amount)}</td>
+          <td><span class="badge ${o.status}">${statusLabel(o.status)}</span></td>
+          <td>${(o.created_at||'').slice(0,16)}</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="empty-hint">還沒有任何訂單</td></tr>';
+    }catch(err){ alert(err.message); }
+  }
+
+  async function loadOrders(){
+    try{
+      const q = currentOrderFilter ? ('?status=' + currentOrderFilter) : '';
+      const d = await api('/admin/orders' + q);
+      document.getElementById('ordersBody').innerHTML = (d.orders||[]).map(o => `
+        <tr>
+          <td>${o.order_no}</td>
+          <td>${o.customer_name || '-'}</td>
+          <td>${o.product_name || '-'}</td>
+          <td>NT$${fmtMoney(o.amount)}</td>
+          <td><span class="badge ${o.status}">${statusLabel(o.status)}</span></td>
+          <td>${o.payment_type || '-'}</td>
+          <td>${(o.created_at||'').slice(0,16)}</td>
+          <td class="row-actions">
+            ${o.status !== 'paid' ? `<button class="btn btn-small" onclick="setOrderStatus(${o.id},'paid')">標記已付款</button>` : ''}
+            ${o.status === 'pending' ? `<button class="btn btn-small btn-danger" onclick="setOrderStatus(${o.id},'cancelled')">取消</button>` : ''}
+          </td>
+        </tr>`).join('') || '<tr><td colspan="8" class="empty-hint">這個狀態底下沒有訂單</td></tr>';
+    }catch(err){ alert(err.message); }
+  }
+
+  function filterOrders(status){
+    currentOrderFilter = status;
+    document.querySelectorAll('#panel-orders .filter-row .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.status === status));
+    loadOrders();
+  }
+
+  async function setOrderStatus(id, status){
+    try{
+      await api('/admin/orders/' + id + '/status', { method:'PATCH', body: JSON.stringify({ status }) });
+      loadOrders();
+    }catch(err){ alert(err.message); }
+  }
+
+  async function loadCustomers(){
+    try{
+      const d = await api('/admin/customers');
+      customersCache = d.customers || [];
+      document.getElementById('customersBody').innerHTML = customersCache.map(c => `
+        <tr>
+          <td>${c.name}</td>
+          <td>${c.contact || '-'}</td>
+          <td>${c.note || '-'}</td>
+          <td>${(c.created_at||'').slice(0,16)}</td>
+          <td class="row-actions">
+            <button class="btn btn-ghost btn-small" onclick="openCustomerModal(${c.id})">編輯</button>
+            <button class="btn btn-danger btn-small" onclick="deleteCustomer(${c.id})">刪除</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty-hint">還沒有客戶資料</td></tr>';
+    }catch(err){ alert(err.message); }
+  }
+
+  function openCustomerModal(id){
+    editingCustomerId = id || null;
+    const c = id ? customersCache.find(x => x.id === id) : null;
+    document.getElementById('customerModalTitle').textContent = id ? '編輯客戶' : '新增客戶';
+    document.getElementById('customerName').value = c ? c.name : '';
+    document.getElementById('customerContact').value = c ? (c.contact || '') : '';
+    document.getElementById('customerNote').value = c ? (c.note || '') : '';
+    document.getElementById('customerModal').classList.remove('hidden');
+  }
+
+  async function submitCustomer(){
+    const name = document.getElementById('customerName').value.trim();
+    if(!name){ alert('請填寫姓名'); return; }
+    const payload = {
+      name,
+      contact: document.getElementById('customerContact').value.trim(),
+      note: document.getElementById('customerNote').value.trim(),
+    };
+    try{
+      if(editingCustomerId){
+        await api('/admin/customers/' + editingCustomerId, { method:'PATCH', body: JSON.stringify(payload) });
+      } else {
+        await api('/admin/customers', { method:'POST', body: JSON.stringify(payload) });
+      }
+      closeModal('customerModal');
+      loadCustomers();
+    }catch(err){ alert(err.message); }
+  }
+
+  async function deleteCustomer(id){
+    if(!confirm('確定要刪除這位客戶嗎？')) return;
+    try{ await api('/admin/customers/' + id, { method:'DELETE' }); loadCustomers(); }
+    catch(err){ alert(err.message); }
+  }
+
+  async function loadProducts(){
+    try{
+      const d = await api('/admin/products');
+      productsCache = d.products || [];
+      const cycleLabel = { one_time:'單次', monthly:'月繳', yearly:'年繳' };
+      document.getElementById('productsBody').innerHTML = productsCache.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td>NT$${fmtMoney(p.price)}</td>
+          <td>${cycleLabel[p.billing_cycle] || p.billing_cycle}</td>
+          <td>${p.active ? '上架中' : '已下架'}</td>
+          <td class="row-actions">
+            <button class="btn btn-ghost btn-small" onclick="openProductModal(${p.id})">編輯</button>
+            <button class="btn btn-danger btn-small" onclick="deleteProduct(${p.id})">刪除</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty-hint">還沒有商品／方案</td></tr>';
+    }catch(err){ alert(err.message); }
+  }
+
+  function openProductModal(id){
+    editingProductId = id || null;
+    const p = id ? productsCache.find(x => x.id === id) : null;
+    document.getElementById('productModalTitle').textContent = id ? '編輯方案' : '新增方案';
+    document.getElementById('productName').value = p ? p.name : '';
+    document.getElementById('productPrice').value = p ? p.price : '';
+    document.getElementById('productCycle').value = p ? p.billing_cycle : 'one_time';
+    document.getElementById('productActive').value = p ? String(p.active) : '1';
+    document.getElementById('productModal').classList.remove('hidden');
+  }
+
+  async function submitProduct(){
+    const name = document.getElementById('productName').value.trim();
+    const price = Number(document.getElementById('productPrice').value);
+    if(!name || Number.isNaN(price)){ alert('請填寫名稱與價格'); return; }
+    const payload = {
+      name, price,
+      billing_cycle: document.getElementById('productCycle').value,
+      active: document.getElementById('productActive').value === '1',
+    };
+    try{
+      if(editingProductId){
+        await api('/admin/products/' + editingProductId, { method:'PATCH', body: JSON.stringify(payload) });
+      } else {
+        await api('/admin/products', { method:'POST', body: JSON.stringify(payload) });
+      }
+      closeModal('productModal');
+      loadProducts();
+    }catch(err){ alert(err.message); }
+  }
+
+  async function deleteProduct(id){
+    if(!confirm('確定要刪除這個方案嗎？')) return;
+    try{ await api('/admin/products/' + id, { method:'DELETE' }); loadProducts(); }
+    catch(err){ alert(err.message); }
+  }
+
+  async function openOrderModal(){
+    try{
+      if(!customersCache.length){ const d = await api('/admin/customers'); customersCache = d.customers || []; }
+      if(!productsCache.length){ const d = await api('/admin/products'); productsCache = d.products || []; }
+    }catch(err){ alert(err.message); return; }
+    document.getElementById('orderCustomerSelect').innerHTML =
+      '<option value="">（不指定客戶）</option>' +
+      customersCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    document.getElementById('orderProductSelect').innerHTML =
+      '<option value="">（不指定商品）</option>' +
+      productsCache.map(p => `<option value="${p.id}" data-price="${p.price}">${p.name}（NT$${fmtMoney(p.price)}）</option>`).join('');
+    document.getElementById('orderAmount').value = '';
+    document.getElementById('orderNote').value = '';
+    document.getElementById('orderModal').classList.remove('hidden');
+  }
+
+  function onOrderProductChange(){
+    const sel = document.getElementById('orderProductSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const price = opt && opt.dataset.price;
+    if(price !== undefined) document.getElementById('orderAmount').value = price;
+  }
+
+  async function submitOrder(){
+    const amount = Number(document.getElementById('orderAmount').value);
+    if(Number.isNaN(amount)){ alert('請填寫金額'); return; }
+    const customerId = document.getElementById('orderCustomerSelect').value;
+    const productId = document.getElementById('orderProductSelect').value;
+    const payload = {
+      amount,
+      customer_id: customerId ? Number(customerId) : null,
+      product_id: productId ? Number(productId) : null,
+      note: document.getElementById('orderNote').value.trim(),
+    };
+    try{
+      await api('/admin/orders', { method:'POST', body: JSON.stringify(payload) });
+      closeModal('orderModal');
+      loadOrders();
+    }catch(err){ alert(err.message); }
+  }
+
+  function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+  if(token){ enterApp(); }
+</script>
+</body>
+</html>

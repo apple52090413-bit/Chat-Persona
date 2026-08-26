@@ -8,3 +8,15 @@ ANTHROPIC_MODEL = "claude-sonnet-5"
 # 部署後用 `wrangler secret put ALLOWED_ORIGIN` 設定，
 # 值為你的 GitHub Pages 網址（例如 https://your-user.github.io），可用逗號分隔多個網址。
 # 不設定的話預設允許所有來源（開發階段方便，正式上線建議設定）。
+
+# 訂單管理後台用的資料庫（D1）。
+# 部署前先執行一次：
+#   npx wrangler d1 create chat-persona-db
+# 指令會印出一個 database_id，貼到下面取代 REPLACE_WITH_YOUR_D1_DATABASE_ID，
+# 然後執行：
+#   npx wrangler d1 execute chat-persona-db --remote --file=./schema.sql
+# 建好資料表。詳見 worker/README.md。
+[[d1_databases]]
+binding = "DB"
+database_name = "chat-persona-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

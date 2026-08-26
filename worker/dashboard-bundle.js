@@ -1,7 +1,7 @@
 // ============================================================
 // Chat Persona API — 單檔打包版（給 Cloudflare Dashboard 線上編輯器用）
 // 這個檔案是 worker/src/*.js 自動合併產生的，內容完全相同，
-// 只是把四個檔案的 import/export 拆解合併成一份方便貼上。
+// 只是把所有檔案的 import/export 拆解合併成一份方便貼上。
 // 如果你有終端機可以用 wrangler 部署，請改用 worker/src/ 底下的原始檔案。
 // ============================================================
 
@@ -42,6 +42,7 @@ async function postToAnthropic(apiKey, body) {
     const errText = await res.text().catch(() => '');
     const err = new Error('Anthropic API error ' + res.status + ': ' + errText.slice(0, 500));
     err.status = res.status;
+    err.isUpstream = true;
     throw err;
   }
   return res.json();
@@ -408,6 +409,512 @@ function buildFollowupMessages({ event, question, contextText }) {
   return [{ role: 'user', content: [{ type: 'text', text }] }];
 }
 
+// ---------- auth.js ----------
+// 簡單的後台登入機制：一組密碼（存在 ADMIN_PASSWORD secret），
+// 登入成功後發一個有效期 12 小時、用 HMAC-SHA256 簽名的 token，
+// 之後每個 /admin/* 請求都要帶著這個 token 驗證。
+// 這不是給多人多帳號用的系統，只是給網站擁有者自己用的後台鎖。
+
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+function toBase64Url(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(str) {
+  const padded = str.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((str.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function hmacKey(secret) {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+async function issueToken(secret, payload) {
+  const body = JSON.stringify({ ...payload, exp: Date.now() + TOKEN_TTL_MS });
+  const bodyB64 = toBase64Url(new TextEncoder().encode(body));
+  const key = await hmacKey(secret);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(bodyB64));
+  const sigB64 = toBase64Url(new Uint8Array(sig));
+  return bodyB64 + '.' + sigB64;
+}
+
+async function verifyToken(secret, token) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+  const [bodyB64, sigB64] = token.split('.');
+  const key = await hmacKey(secret);
+  const expectedSig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(bodyB64)));
+  const givenSig = fromBase64Url(sigB64);
+  if (expectedSig.length !== givenSig.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expectedSig.length; i++) diff |= expectedSig[i] ^ givenSig[i];
+  if (diff !== 0) return null;
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(fromBase64Url(bodyB64)));
+  } catch {
+    return null;
+  }
+  if (!payload.exp || Date.now() > payload.exp) return null;
+  return payload;
+}
+
+function getBearerToken(request) {
+  const header = request.headers.get('Authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : null;
+}
+
+// ---------- newebpay.js ----------
+// ============================================================
+// 藍新金流（NewebPay）MPG 介面串接工具
+//
+// ⚠️ 這個檔案的演算法（AES-256-CBC 加解密 + SHA256 檢查碼）是依照藍新
+// 金流 MPG API 文件的標準做法寫的，但欄位名稱、後台網址等細節請在拿到
+// 特約商店資格、下載到官方最新文件後，對照一次再上線使用。
+//
+// 需要的三個值（申請特約商店通過後，藍新後台會給你）：
+//   MerchantID — 商店代號
+//   HashKey    — 32 字元
+//   HashIV     — 16 字元
+// ============================================================
+
+function toHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function fromHex(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return toHex(new Uint8Array(digest)).toUpperCase();
+}
+
+async function importAesKey(hashKey) {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(hashKey), { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
+}
+
+// 建立要送去藍新收銀台的 TradeInfo / TradeSha（用在「前往付款」那一步，
+// 把使用者導去藍新的付款頁）。
+async function buildTradeInfo({ hashKey, hashIv, params }) {
+  const query = Object.entries(params)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
+  const key = await importAesKey(hashKey);
+  const iv = new TextEncoder().encode(hashIv);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, new TextEncoder().encode(query));
+  const tradeInfo = toHex(new Uint8Array(encrypted));
+  const tradeSha = await sha256Hex(`HashKey=${hashKey}&TradeInfo=${tradeInfo}&HashIV=${hashIv}`);
+  return { tradeInfo, tradeSha };
+}
+
+// 驗證＋解密藍新背景通知（Notify URL）送回來的 TradeInfo / TradeSha。
+// 回傳解密後的參數物件（例如 { Status, MerchantOrderNo, TradeAmt, PaymentType, ... }），
+// 如果檢查碼不對會回傳 null（代表這筆通知可能被竄改，不可信任）。
+async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) {
+  const expectedSha = await sha256Hex(`HashKey=${hashKey}&TradeInfo=${tradeInfo}&HashIV=${hashIv}`);
+  if (expectedSha !== (tradeSha || '').toUpperCase()) return null;
+
+  const key = await importAesKey(hashKey);
+  const iv = new TextEncoder().encode(hashIv);
+  let decryptedBuf;
+  try {
+    decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
+  } catch {
+    return null;
+  }
+  const decrypted = new TextDecoder().decode(decryptedBuf);
+  const result = {};
+  for (const pair of decrypted.split('&')) {
+    const [k, v] = pair.split('=');
+    if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
+  }
+  return result;
+}
+
+// ---------- db.js ----------
+// ---------- Customers ----------
+
+async function listCustomers(db) {
+  const { results } = await db.prepare('SELECT * FROM customers ORDER BY id DESC').all();
+  return results;
+}
+
+async function createCustomer(db, { name, contact, note }) {
+  const res = await db.prepare('INSERT INTO customers (name, contact, note) VALUES (?, ?, ?)')
+    .bind(name, contact || null, note || null).run();
+  return getCustomer(db, res.meta.last_row_id);
+}
+
+async function getCustomer(db, id) {
+  return db.prepare('SELECT * FROM customers WHERE id = ?').bind(id).first();
+}
+
+async function updateCustomer(db, id, fields) {
+  const allowed = ['name', 'contact', 'note'];
+  const sets = [];
+  const values = [];
+  for (const key of allowed) {
+    if (fields[key] !== undefined) { sets.push(key + ' = ?'); values.push(fields[key]); }
+  }
+  if (!sets.length) return getCustomer(db, id);
+  values.push(id);
+  await db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?').bind(...values).run();
+  return getCustomer(db, id);
+}
+
+async function deleteCustomer(db, id) {
+  await db.prepare('DELETE FROM customers WHERE id = ?').bind(id).run();
+}
+
+// ---------- Products ----------
+
+async function listProducts(db) {
+  const { results } = await db.prepare('SELECT * FROM products ORDER BY id ASC').all();
+  return results;
+}
+
+async function createProduct(db, { name, price, billing_cycle, active }) {
+  const res = await db.prepare('INSERT INTO products (name, price, billing_cycle, active) VALUES (?, ?, ?, ?)')
+    .bind(name, price, billing_cycle || 'one_time', active === false ? 0 : 1).run();
+  return getProduct(db, res.meta.last_row_id);
+}
+
+async function getProduct(db, id) {
+  return db.prepare('SELECT * FROM products WHERE id = ?').bind(id).first();
+}
+
+async function updateProduct(db, id, fields) {
+  const allowed = ['name', 'price', 'billing_cycle', 'active'];
+  const sets = [];
+  const values = [];
+  for (const key of allowed) {
+    if (fields[key] !== undefined) { sets.push(key + ' = ?'); values.push(key === 'active' ? (fields[key] ? 1 : 0) : fields[key]); }
+  }
+  if (!sets.length) return getProduct(db, id);
+  values.push(id);
+  await db.prepare('UPDATE products SET ' + sets.join(', ') + ' WHERE id = ?').bind(...values).run();
+  return getProduct(db, id);
+}
+
+async function deleteProduct(db, id) {
+  await db.prepare('DELETE FROM products WHERE id = ?').bind(id).run();
+}
+
+// ---------- Orders ----------
+
+async function listOrders(db, { status } = {}) {
+  if (status) {
+    const { results } = await db.prepare(
+      `SELECT orders.*, customers.name AS customer_name, products.name AS product_name
+       FROM orders
+       LEFT JOIN customers ON customers.id = orders.customer_id
+       LEFT JOIN products ON products.id = orders.product_id
+       WHERE orders.status = ?
+       ORDER BY orders.id DESC`
+    ).bind(status).all();
+    return results;
+  }
+  const { results } = await db.prepare(
+    `SELECT orders.*, customers.name AS customer_name, products.name AS product_name
+     FROM orders
+     LEFT JOIN customers ON customers.id = orders.customer_id
+     LEFT JOIN products ON products.id = orders.product_id
+     ORDER BY orders.id DESC`
+  ).all();
+  return results;
+}
+
+async function getOrder(db, id) {
+  return db.prepare(
+    `SELECT orders.*, customers.name AS customer_name, products.name AS product_name
+     FROM orders
+     LEFT JOIN customers ON customers.id = orders.customer_id
+     LEFT JOIN products ON products.id = orders.product_id
+     WHERE orders.id = ?`
+  ).bind(id).first();
+}
+
+async function getOrderByOrderNo(db, orderNo) {
+  return db.prepare('SELECT * FROM orders WHERE order_no = ?').bind(orderNo).first();
+}
+
+function generateOrderNo() {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return 'ORD' + stamp + rand;
+}
+
+async function createOrder(db, { customer_id, product_id, amount, note }) {
+  const orderNo = generateOrderNo();
+  const res = await db.prepare(
+    'INSERT INTO orders (order_no, customer_id, product_id, amount, note, status) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(orderNo, customer_id || null, product_id || null, amount, note || null, 'pending').run();
+  return getOrder(db, res.meta.last_row_id);
+}
+
+async function updateOrderStatus(db, id, { status, payment_type }) {
+  const paidAt = status === 'paid' ? new Date().toISOString() : null;
+  await db.prepare('UPDATE orders SET status = ?, payment_type = COALESCE(?, payment_type), paid_at = COALESCE(?, paid_at) WHERE id = ?')
+    .bind(status, payment_type || null, paidAt, id).run();
+  return getOrder(db, id);
+}
+
+async function markOrderPaidByOrderNo(db, orderNo, { payment_type } = {}) {
+  await db.prepare("UPDATE orders SET status = 'paid', payment_type = COALESCE(?, payment_type), paid_at = ? WHERE order_no = ?")
+    .bind(payment_type || null, new Date().toISOString(), orderNo).run();
+  return getOrderByOrderNo(db, orderNo);
+}
+
+// ---------- Dashboard ----------
+
+async function getDashboardStats(db) {
+  const monthPrefix = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const revenueRow = await db.prepare(
+    "SELECT COALESCE(SUM(amount), 0) AS total FROM orders WHERE status = 'paid' AND substr(paid_at, 1, 7) = ?"
+  ).bind(monthPrefix).first();
+  const paidCountRow = await db.prepare(
+    "SELECT COUNT(*) AS n FROM orders WHERE status = 'paid' AND substr(paid_at, 1, 7) = ?"
+  ).bind(monthPrefix).first();
+  const pendingRow = await db.prepare("SELECT COUNT(*) AS n FROM orders WHERE status = 'pending'").first();
+  const { results: recentOrders } = await db.prepare(
+    `SELECT orders.*, customers.name AS customer_name, products.name AS product_name
+     FROM orders
+     LEFT JOIN customers ON customers.id = orders.customer_id
+     LEFT JOIN products ON products.id = orders.product_id
+     ORDER BY orders.id DESC LIMIT 8`
+  ).all();
+  return {
+    monthlyRevenue: revenueRow ? revenueRow.total : 0,
+    monthlyPaidOrders: paidCountRow ? paidCountRow.n : 0,
+    pendingOrders: pendingRow ? pendingRow.n : 0,
+    recentOrders,
+  };
+}
+
+// db.js 原本是用 `import * as db` 呼叫，這裡重建一個等價的 db 物件，
+// 讓下面 adminRoutes.js 的 db.xxx(...) 呼叫方式維持不變。
+const db = {
+  listCustomers,
+  createCustomer,
+  getCustomer,
+  updateCustomer,
+  deleteCustomer,
+  listProducts,
+  createProduct,
+  getProduct,
+  updateProduct,
+  deleteProduct,
+  listOrders,
+  getOrder,
+  getOrderByOrderNo,
+  createOrder,
+  updateOrderStatus,
+  markOrderPaidByOrderNo,
+  getDashboardStats,
+};
+
+// ---------- adminRoutes.js ----------
+function adminBadRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  err.isValidation = true;
+  return err;
+}
+
+function unauthorized(message) {
+  const err = new Error(message || '未登入或登入已過期');
+  err.status = 401;
+  err.isValidation = true;
+  return err;
+}
+
+async function requireAdmin(request, env) {
+  if (!env.ADMIN_PASSWORD) {
+    const err = new Error('Server not configured: missing ADMIN_PASSWORD secret');
+    err.status = 500;
+    throw err;
+  }
+  const token = getBearerToken(request);
+  const payload = await verifyToken(env.ADMIN_PASSWORD, token);
+  if (!payload) throw unauthorized();
+  return payload;
+}
+
+async function handleLogin(request, env, body) {
+  if (!env.ADMIN_PASSWORD) {
+    const err = new Error('Server not configured: missing ADMIN_PASSWORD secret');
+    err.status = 500;
+    throw err;
+  }
+  if (!body || body.password !== env.ADMIN_PASSWORD) throw unauthorized('密碼錯誤');
+  const token = await issueToken(env.ADMIN_PASSWORD, { role: 'admin' });
+  return { token };
+}
+
+function requireDb(env) {
+  if (!env.DB) {
+    const err = new Error('Server not configured: missing DB (D1) binding');
+    err.status = 500;
+    throw err;
+  }
+  return env.DB;
+}
+
+// ---------- Dashboard ----------
+async function handleDashboard(request, env) {
+  await requireAdmin(request, env);
+  return db.getDashboardStats(requireDb(env));
+}
+
+// ---------- Customers ----------
+async function handleListCustomers(request, env) {
+  await requireAdmin(request, env);
+  return { customers: await db.listCustomers(requireDb(env)) };
+}
+
+async function handleCreateCustomer(request, env, body) {
+  await requireAdmin(request, env);
+  if (!body || !body.name) throw adminBadRequest('請填寫客戶姓名');
+  return db.createCustomer(requireDb(env), body);
+}
+
+async function handleUpdateCustomer(request, env, body, params) {
+  await requireAdmin(request, env);
+  return db.updateCustomer(requireDb(env), params.id, body || {});
+}
+
+async function handleDeleteCustomer(request, env, body, params) {
+  await requireAdmin(request, env);
+  await db.deleteCustomer(requireDb(env), params.id);
+  return { ok: true };
+}
+
+// ---------- Products ----------
+async function handleListProducts(request, env) {
+  await requireAdmin(request, env);
+  return { products: await db.listProducts(requireDb(env)) };
+}
+
+async function handleCreateProduct(request, env, body) {
+  await requireAdmin(request, env);
+  if (!body || !body.name || typeof body.price !== 'number') throw adminBadRequest('請填寫商品名稱與價格');
+  return db.createProduct(requireDb(env), body);
+}
+
+async function handleUpdateProduct(request, env, body, params) {
+  await requireAdmin(request, env);
+  return db.updateProduct(requireDb(env), params.id, body || {});
+}
+
+async function handleDeleteProduct(request, env, body, params) {
+  await requireAdmin(request, env);
+  await db.deleteProduct(requireDb(env), params.id);
+  return { ok: true };
+}
+
+// ---------- Orders ----------
+async function handleListOrders(request, env) {
+  await requireAdmin(request, env);
+  const url = new URL(request.url);
+  const status = url.searchParams.get('status') || undefined;
+  return { orders: await db.listOrders(requireDb(env), { status }) };
+}
+
+async function handleCreateOrder(request, env, body) {
+  await requireAdmin(request, env);
+  if (!body || typeof body.amount !== 'number') throw adminBadRequest('請填寫訂單金額');
+  return db.createOrder(requireDb(env), body);
+}
+
+async function handleUpdateOrderStatus(request, env, body, params) {
+  await requireAdmin(request, env);
+  if (!body || !['pending', 'paid', 'failed', 'cancelled'].includes(body.status)) {
+    throw adminBadRequest('狀態必須是 pending / paid / failed / cancelled 其中之一');
+  }
+  return db.updateOrderStatus(requireDb(env), params.id, body);
+}
+
+// ---------- 藍新金流：建立付款請求（給前端「前往付款」按鈕用）----------
+async function handleCreatePayment(request, env, body) {
+  await requireAdmin(request, env);
+  if (!env.NEWEBPAY_MERCHANT_ID || !env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) {
+    const err = new Error('尚未設定藍新金流金鑰（NEWEBPAY_MERCHANT_ID / NEWEBPAY_HASH_KEY / NEWEBPAY_HASH_IV），還沒申請到特約商店資格前無法使用真實付款。');
+    err.status = 400;
+    err.isValidation = true;
+    throw err;
+  }
+  const orderId = body && body.orderId;
+  if (!orderId) throw adminBadRequest('缺少 orderId');
+  const order = await db.getOrder(requireDb(env), orderId);
+  if (!order) throw adminBadRequest('找不到這筆訂單');
+
+  const now = new Date();
+  const params = {
+    MerchantID: env.NEWEBPAY_MERCHANT_ID,
+    RespondType: 'JSON',
+    TimeStamp: Math.floor(now.getTime() / 1000).toString(),
+    Version: '2.0',
+    MerchantOrderNo: order.order_no,
+    Amt: String(order.amount),
+    ItemDesc: (order.product_name || 'Chat Persona 訂閱').slice(0, 50),
+    ReturnURL: env.NEWEBPAY_RETURN_URL || '',
+    NotifyURL: env.NEWEBPAY_NOTIFY_URL || '',
+  };
+  const { tradeInfo, tradeSha } = await buildTradeInfo({
+    hashKey: env.NEWEBPAY_HASH_KEY,
+    hashIv: env.NEWEBPAY_HASH_IV,
+    params,
+  });
+  return {
+    gatewayUrl: env.NEWEBPAY_GATEWAY_URL || 'https://core.newebpay.com/MPG/mpg_gateway',
+    merchantId: env.NEWEBPAY_MERCHANT_ID,
+    version: params.Version,
+    tradeInfo,
+    tradeSha,
+  };
+}
+
+// ---------- 藍新金流：背景通知（Notify URL，藍新伺服器對伺服器呼叫，不經過使用者瀏覽器）----------
+async function handleNewebpayNotify(request, env) {
+  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) {
+    return new Response('Not configured', { status: 500 });
+  }
+  let form;
+  try {
+    form = await request.formData();
+  } catch {
+    return new Response('Bad Request', { status: 400 });
+  }
+  const tradeInfo = form.get('TradeInfo');
+  const tradeSha = form.get('TradeSha');
+  if (!tradeInfo || !tradeSha) return new Response('Bad Request', { status: 400 });
+
+  const decoded = await verifyAndDecryptNotify({
+    hashKey: env.NEWEBPAY_HASH_KEY,
+    hashIv: env.NEWEBPAY_HASH_IV,
+    tradeInfo,
+    tradeSha,
+  });
+  if (!decoded) return new Response('Invalid signature', { status: 400 });
+
+  if (decoded.Status === 'SUCCESS' && decoded.MerchantOrderNo) {
+    await db.markOrderPaidByOrderNo(requireDb(env), decoded.MerchantOrderNo, { payment_type: decoded.PaymentType });
+  }
+  // 藍新規定 Notify URL 一定要回應 "1|OK" 純文字，不然它會重複重試通知。
+  return new Response('1|OK', { status: 200, headers: { 'content-type': 'text/plain' } });
+}
+
 // ---------- index.js ----------
 function corsHeaders(env, request) {
   const origin = request.headers.get('Origin') || '';
@@ -415,8 +922,8 @@ function corsHeaders(env, request) {
   const allowOrigin = allowed.length === 0 ? '*' : (allowed.includes(origin) ? origin : allowed[0]);
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Vary': 'Origin',
   };
 }
@@ -436,7 +943,9 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
-async function handlePersona(body, env) {
+// ---------- 免費/付費版聊天分析（需要 ANTHROPIC_API_KEY）----------
+
+async function handlePersona(request, env, body) {
   const text = truncateText(body.text || '');
   const images = validateImages(body.images);
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
@@ -447,7 +956,7 @@ async function handlePersona(body, env) {
   });
 }
 
-async function handleRelationship(body, env) {
+async function handleRelationship(request, env, body) {
   const text = truncateText(body.text || '');
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
@@ -462,7 +971,7 @@ async function handleRelationship(body, env) {
   });
 }
 
-async function handleRefine(body, env) {
+async function handleRefine(request, env, body) {
   const draft = body.draft;
   const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!draft || typeof draft !== 'object') throw badRequest('缺少原始分析結果');
@@ -473,7 +982,7 @@ async function handleRefine(body, env) {
   });
 }
 
-async function handleFollowup(body, env) {
+async function handleFollowup(request, env, body) {
   const event = body.event && typeof body.event === 'object' ? body.event : {};
   const question = typeof body.question === 'string' ? body.question.slice(0, 1000).trim() : '';
   const contextText = truncateText(body.text || '');
@@ -486,41 +995,100 @@ async function handleFollowup(body, env) {
   return { reply };
 }
 
-const ROUTES = {
-  '/analyze-persona': handlePersona,
-  '/analyze-relationship': handleRelationship,
-  '/refine-relationship': handleRefine,
-  '/timeline-followup': handleFollowup,
-};
+// ---------- 路由表 ----------
+// path 可以用 :id 這種形式表示路徑參數。
+// requiresApiKey: 需要 ANTHROPIC_API_KEY 才能用（聊天分析相關）。
+// raw: handler 直接回傳 Response 物件（不要包成 JSON），目前只有藍新的 webhook 用到。
+
+const ROUTES = [
+  { method: 'POST', path: '/analyze-persona', handler: handlePersona, requiresApiKey: true },
+  { method: 'POST', path: '/analyze-relationship', handler: handleRelationship, requiresApiKey: true },
+  { method: 'POST', path: '/refine-relationship', handler: handleRefine, requiresApiKey: true },
+  { method: 'POST', path: '/timeline-followup', handler: handleFollowup, requiresApiKey: true },
+
+  { method: 'POST', path: '/admin/login', handler: handleLogin },
+  { method: 'GET', path: '/admin/dashboard', handler: handleDashboard },
+
+  { method: 'GET', path: '/admin/customers', handler: handleListCustomers },
+  { method: 'POST', path: '/admin/customers', handler: handleCreateCustomer },
+  { method: 'PATCH', path: '/admin/customers/:id', handler: handleUpdateCustomer },
+  { method: 'DELETE', path: '/admin/customers/:id', handler: handleDeleteCustomer },
+
+  { method: 'GET', path: '/admin/products', handler: handleListProducts },
+  { method: 'POST', path: '/admin/products', handler: handleCreateProduct },
+  { method: 'PATCH', path: '/admin/products/:id', handler: handleUpdateProduct },
+  { method: 'DELETE', path: '/admin/products/:id', handler: handleDeleteProduct },
+
+  { method: 'GET', path: '/admin/orders', handler: handleListOrders },
+  { method: 'POST', path: '/admin/orders', handler: handleCreateOrder },
+  { method: 'PATCH', path: '/admin/orders/:id/status', handler: handleUpdateOrderStatus },
+
+  { method: 'POST', path: '/admin/create-payment', handler: handleCreatePayment },
+
+  { method: 'POST', path: '/webhook/newebpay', handler: handleNewebpayNotify, raw: true },
+];
+
+function matchRoute(method, pathname) {
+  for (const route of ROUTES) {
+    if (route.method !== method) continue;
+    const paramNames = [];
+    const patternStr = '^' + route.path
+      .split('/')
+      .map(seg => {
+        if (seg.startsWith(':')) { paramNames.push(seg.slice(1)); return '([^/]+)'; }
+        return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      })
+      .join('/') + '$';
+    const match = pathname.match(new RegExp(patternStr));
+    if (match) {
+      const params = {};
+      paramNames.forEach((name, i) => { params[name] = decodeURIComponent(match[i + 1]); });
+      return { route, params };
+    }
+  }
+  return null;
+}
 
 export default {
   async fetch(request, env) {
     const headers = corsHeaders(env, request);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, headers);
 
-    if (!env.ANTHROPIC_API_KEY) {
+    const url = new URL(request.url);
+    const matched = matchRoute(request.method, url.pathname);
+    if (!matched) return json({ error: 'Not found' }, 404, headers);
+
+    const { route, params } = matched;
+
+    if (route.requiresApiKey && !env.ANTHROPIC_API_KEY) {
       return json({ error: 'Server not configured: missing ANTHROPIC_API_KEY secret' }, 500, headers);
     }
 
-    const url = new URL(request.url);
-    const handler = ROUTES[url.pathname];
-    if (!handler) return json({ error: 'Not found' }, 404, headers);
+    if (route.raw) {
+      try {
+        return await route.handler(request, env, params);
+      } catch (err) {
+        console.error(err);
+        return new Response('Internal error', { status: 500 });
+      }
+    }
 
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return json({ error: 'Invalid JSON body' }, 400, headers);
+    let body = {};
+    if (request.method === 'POST' || request.method === 'PATCH') {
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: 'Invalid JSON body' }, 400, headers);
+      }
     }
 
     try {
-      const result = await handler(body, env);
+      const result = await route.handler(request, env, body, params);
       return json(result, 200, headers);
     } catch (err) {
       console.error(err);
-      const status = err.isValidation ? 400 : (err.status ? 502 : 500);
+      const status = err.isValidation ? (err.status || 400) : err.isUpstream ? 502 : (err.status || 500);
       return json({ error: err.message || 'Internal error' }, status, headers);
     }
   },
