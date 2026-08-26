@@ -1,0 +1,537 @@
+<title>Chat Persona 控制室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#faf7f2;
+    --paper-raised:#ffffff;
+    --ink:#2b2620;
+    --ink-soft:#6b6357;
+    --ink-dim:#a89e8f;
+    --line:rgba(43,38,32,0.13);
+    --line-strong:rgba(43,38,32,0.24);
+
+    --a-github:#4f5b93;
+    --a-github-soft:#eceefa;
+    --a-cloudflare:#c4661f;
+    --a-cloudflare-soft:#fbede0;
+    --a-godaddy:#2f8c6f;
+    --a-godaddy-soft:#e6f4ee;
+    --a-files:#a97a2e;
+    --a-files-soft:#faf1de;
+    --a-payment:#b25a70;
+    --a-payment-soft:#fbebef;
+
+    --status-good:#2f8c6f;
+    --status-good-soft:#e6f4ee;
+    --status-pending:#b3821f;
+    --status-pending-soft:#faf1dc;
+
+    --shadow: 0 1px 2px rgba(43,38,32,0.05), 0 8px 24px rgba(43,38,32,0.06);
+    --radius: 14px;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#1c1915;
+      --paper-raised:#252119;
+      --ink:#f2ede3;
+      --ink-soft:#c3b8a6;
+      --ink-dim:#8a8072;
+      --line:rgba(242,237,227,0.13);
+      --line-strong:rgba(242,237,227,0.24);
+
+      --a-github:#9aa6e8;
+      --a-github-soft:#2b2f47;
+      --a-cloudflare:#f0985b;
+      --a-cloudflare-soft:#3a2a1c;
+      --a-godaddy:#6fcaa8;
+      --a-godaddy-soft:#1f3830;
+      --a-files:#e3b567;
+      --a-files-soft:#3a2f1a;
+      --a-payment:#e197ac;
+      --a-payment-soft:#3a2530;
+
+      --status-good:#6fcaa8;
+      --status-good-soft:#1f3830;
+      --status-pending:#e3b567;
+      --status-pending-soft:#3a2f1a;
+
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1c1915;
+    --paper-raised:#252119;
+    --ink:#f2ede3;
+    --ink-soft:#c3b8a6;
+    --ink-dim:#8a8072;
+    --line:rgba(242,237,227,0.13);
+    --line-strong:rgba(242,237,227,0.24);
+
+    --a-github:#9aa6e8;
+    --a-github-soft:#2b2f47;
+    --a-cloudflare:#f0985b;
+    --a-cloudflare-soft:#3a2a1c;
+    --a-godaddy:#6fcaa8;
+    --a-godaddy-soft:#1f3830;
+    --a-files:#e3b567;
+    --a-files-soft:#3a2f1a;
+    --a-payment:#e197ac;
+    --a-payment-soft:#3a2530;
+
+    --status-good:#6fcaa8;
+    --status-good-soft:#1f3830;
+    --status-pending:#e3b567;
+    --status-pending-soft:#3a2f1a;
+
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink-soft);
+    font-family:"Noto Sans TC", sans-serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{ color:inherit; }
+
+  .wrap{
+    max-width:840px;
+    margin:0 auto;
+    padding:40px 20px 96px;
+  }
+
+  header.top{
+    padding-bottom:28px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:28px;
+  }
+  .eyebrow{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+    margin:0 0 10px;
+  }
+  h1{
+    font-family:"Noto Serif TC", serif;
+    font-weight:900;
+    color:var(--ink);
+    font-size:clamp(28px, 5vw, 38px);
+    margin:0 0 10px;
+    text-wrap:balance;
+  }
+  .lede{
+    font-size:15.5px;
+    color:var(--ink-soft);
+    max-width:56ch;
+    margin:0;
+  }
+  .updated{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:12px;
+    color:var(--ink-dim);
+    margin-top:14px;
+  }
+
+  nav.jump{
+    display:flex;
+    gap:8px;
+    overflow-x:auto;
+    padding-bottom:4px;
+    margin:22px 0 4px;
+    scrollbar-width:thin;
+  }
+  nav.jump a{
+    flex:0 0 auto;
+    text-decoration:none;
+    font-size:13px;
+    font-weight:500;
+    padding:7px 14px;
+    border-radius:999px;
+    border:1px solid var(--line-strong);
+    color:var(--ink-soft);
+    white-space:nowrap;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  nav.jump a:hover{ background:var(--paper-raised); }
+  nav.jump a .dot{
+    display:inline-block; width:7px; height:7px; border-radius:50%;
+    margin-right:7px; vertical-align:middle;
+  }
+
+  section.card{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-left:4px solid var(--accent);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:26px 26px 24px;
+    margin-bottom:22px;
+    scroll-margin-top:18px;
+  }
+  section.card .head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:6px;
+    flex-wrap:wrap;
+  }
+  section.card .tag{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--accent);
+    background:var(--accent-soft);
+    padding:3px 9px;
+    border-radius:6px;
+  }
+  section.card h2{
+    font-family:"Noto Serif TC", serif;
+    font-weight:700;
+    font-size:21px;
+    color:var(--ink);
+    margin:0;
+  }
+  section.card .sub{
+    color:var(--ink-dim);
+    font-size:13.5px;
+    margin:0 0 18px;
+  }
+
+  h3.block-label{
+    font-size:12px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+    font-weight:700;
+    margin:20px 0 10px;
+  }
+  section.card h3.block-label:first-of-type{ margin-top:4px; }
+
+  .facts{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:9px 18px;
+    font-size:14.5px;
+  }
+  .facts dt{
+    color:var(--ink-dim);
+    white-space:nowrap;
+    font-size:13px;
+    padding-top:1px;
+  }
+  .facts dd{
+    margin:0;
+    color:var(--ink);
+    overflow-wrap:anywhere;
+  }
+  code, .mono{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:0.93em;
+    background:var(--paper);
+    border:1px solid var(--line);
+    padding:1px 6px;
+    border-radius:5px;
+    color:var(--ink);
+  }
+
+  .links{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .links a{
+    text-decoration:none;
+    font-size:13.5px;
+    font-weight:500;
+    color:var(--accent);
+    background:var(--accent-soft);
+    padding:6px 12px;
+    border-radius:8px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .links a::after{ content:"↗"; font-size:11px; opacity:0.7; }
+
+  ol.tasks{
+    margin:0;
+    padding-left:0;
+    list-style:none;
+    counter-reset:task;
+  }
+  ol.tasks li{
+    counter-increment:task;
+    position:relative;
+    padding:10px 0 10px 30px;
+    border-top:1px solid var(--line);
+    font-size:14.5px;
+  }
+  ol.tasks li:first-child{ border-top:none; }
+  ol.tasks li::before{
+    content:counter(task);
+    position:absolute; left:0; top:10px;
+    font-family:"IBM Plex Mono", monospace;
+    font-size:12px;
+    color:var(--accent);
+    background:var(--accent-soft);
+    width:20px; height:20px;
+    border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  ol.tasks li b{ color:var(--ink); font-weight:600; }
+
+  .filetree{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:13px;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    overflow-x:auto;
+    line-height:1.85;
+    color:var(--ink-soft);
+  }
+  .filetree .path{ color:var(--ink); }
+  .filetree .note{ color:var(--ink-dim); }
+  .filetree .indent{ padding-left:1.6em; }
+
+  .status-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 14px;
+    border-radius:10px;
+    background:var(--status-pending-soft);
+    color:var(--status-pending);
+    font-size:14px;
+    font-weight:500;
+    margin-bottom:16px;
+  }
+  .status-row.good{ background:var(--status-good-soft); color:var(--status-good); }
+  .status-row .pip{
+    width:8px; height:8px; border-radius:50%; background:currentColor; flex:0 0 auto;
+  }
+
+  .decisions{
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .decisions li{
+    list-style:none;
+    display:flex; gap:10px;
+    font-size:14px;
+    padding-bottom:10px;
+    border-bottom:1px solid var(--line);
+  }
+  .decisions li:last-child{ border-bottom:none; padding-bottom:0; }
+  .decisions .check{
+    flex:0 0 auto; color:var(--status-good); font-weight:700;
+  }
+
+  .warn-box{
+    background:var(--a-payment-soft);
+    border:1px solid color-mix(in srgb, var(--a-payment) 30%, transparent);
+    color:var(--ink);
+    border-radius:10px;
+    padding:12px 14px;
+    font-size:13.5px;
+    margin-top:16px;
+  }
+  .warn-box b{ color:var(--a-payment); }
+
+  footer{
+    text-align:center;
+    color:var(--ink-dim);
+    font-size:12.5px;
+    margin-top:36px;
+    font-family:"IBM Plex Mono", monospace;
+  }
+
+  @media (max-width:520px){
+    .facts{ grid-template-columns:1fr; gap:2px 0; }
+    .facts dt{ margin-top:8px; }
+    section.card{ padding:20px 18px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <p class="eyebrow">Chat Persona · chatpersonachatlab.com</p>
+    <h1>控制室</h1>
+    <p class="lede">GitHub、Cloudflare、GoDaddy 帳號設定跟檔案都放在這裡，之後要找東西直接來這頁查就好，不用回頭翻對話紀錄。</p>
+    <p class="updated">最後更新：2026-08-26</p>
+  </header>
+
+  <nav class="jump">
+    <a href="#github"><span class="dot" style="background:var(--a-github)"></span>GitHub</a>
+    <a href="#cloudflare"><span class="dot" style="background:var(--a-cloudflare)"></span>Cloudflare</a>
+    <a href="#godaddy"><span class="dot" style="background:var(--a-godaddy)"></span>GoDaddy</a>
+    <a href="#files"><span class="dot" style="background:var(--a-files)"></span>檔案地圖</a>
+    <a href="#payment"><span class="dot" style="background:var(--a-payment)"></span>藍新金流</a>
+    <a href="#log"><span class="dot" style="background:var(--ink-dim)"></span>決策紀錄</a>
+  </nav>
+
+  <!-- GITHUB -->
+  <section class="card" id="github" style="--accent:var(--a-github); --accent-soft:var(--a-github-soft);">
+    <div class="head">
+      <span class="tag">程式碼 / 部署</span>
+      <h2>GitHub</h2>
+    </div>
+    <p class="sub">網站原始碼放的地方，也是自動部署的觸發點。</p>
+
+    <h3 class="block-label">重點資訊</h3>
+    <dl class="facts">
+      <dt>Repo</dt><dd><code>apple52090413-bit/Chat-Persona</code>（公開）</dd>
+      <dt>正式分支</dt><dd><code>main</code> —— 這裡的內容就是網站上線的內容</dd>
+      <dt>開發分支</dt><dd><code>claude/website-setup-kfachn</code> —— 改動先進這裡，確認沒問題再併回 <code>main</code></dd>
+      <dt>自動部署</dt><dd><code>.github/workflows/deploy-pages.yml</code> —— 只要有東西 push 到 <code>main</code>，就會自動重新發布網站，不用手動按什麼</dd>
+      <dt>Pages 設定</dt><dd>Settings → Pages → Source 設為 <code>GitHub Actions</code>；自訂網域 <code>chatpersonachatlab.com</code>，已勾選 <code>Enforce HTTPS</code></dd>
+    </dl>
+
+    <h3 class="block-label">常見操作</h3>
+    <ol class="tasks">
+      <li><b>網站有改版</b> —— 不用做任何事，程式碼 push 到 <code>main</code> 之後 1-2 分鐘會自動上線。</li>
+      <li><b>想看網站現在是不是公開的</b> —— Settings → General → 最下面 Danger Zone 會顯示目前是 Public 還是 Private（一定要 Public，Private 會讓免費版 Pages 失效）。</li>
+    </ol>
+
+    <h3 class="block-label">常用連結</h3>
+    <div class="links">
+      <a href="https://github.com/apple52090413-bit/Chat-Persona" target="_blank" rel="noopener">Repo 首頁</a>
+      <a href="https://github.com/apple52090413-bit/Chat-Persona/actions" target="_blank" rel="noopener">部署紀錄（Actions）</a>
+      <a href="https://github.com/apple52090413-bit/Chat-Persona/settings/pages" target="_blank" rel="noopener">Pages 設定</a>
+    </div>
+  </section>
+
+  <!-- CLOUDFLARE -->
+  <section class="card" id="cloudflare" style="--accent:var(--a-cloudflare); --accent-soft:var(--a-cloudflare-soft);">
+    <div class="head">
+      <span class="tag">AI 分析 / 後台 API</span>
+      <h2>Cloudflare</h2>
+    </div>
+    <p class="sub">網站背後真正在跑 AI 分析、訂單後台、藍新金流串接的地方（Worker + D1 資料庫）。</p>
+
+    <h3 class="block-label">重點資訊</h3>
+    <dl class="facts">
+      <dt>Worker 名稱</dt><dd><code>chat-persona-api</code></dd>
+      <dt>API 網址</dt><dd><code>chat-persona-api.apple52090413.workers.dev</code></dd>
+      <dt>負責的事</dt><dd>免費版人格分析、付費版關係分析、追問對話、admin.html 後台的登入與訂單/客戶/商品資料、藍新金流建立付款＋接收通知</dd>
+      <dt>已設定的 Secrets</dt><dd><code>ANTHROPIC_API_KEY</code>、<code>ADMIN_PASSWORD</code> —— 實際數值只存在 Cloudflare 後台，這份文件跟任何程式碼檔案裡都不會出現</dd>
+      <dt>資料庫（D1）</dt><dd><code>chat-persona-db</code>，綁定名稱 <code>DB</code>，存客戶／商品／訂單資料</dd>
+      <dt>部署方式</dt><dd>因為沒有終端機，是用 Cloudflare 網頁上的線上編輯器，整份貼上 <code>worker/dashboard-bundle.js</code> 再按 Deploy</dd>
+    </dl>
+
+    <h3 class="block-label">常見操作</h3>
+    <ol class="tasks">
+      <li><b>後端邏輯有改版</b> —— 這邊會直接給你新的 <code>dashboard-bundle.js</code> 純文字內容，複製貼到 Worker 編輯器整份取代舊的，按 <code>Deploy</code>。</li>
+      <li><b>要新增密鑰／金鑰</b>（例如之後藍新的 MerchantID）—— Worker 頁面 → Settings → Variables and secrets → Add → 類型選 <code>Secret</code>。存完通常要到 Deployments 頁確認新版本已經是 <code>Active</code>，不然設定不會生效。</li>
+      <li><b>忘記後台密碼</b>（admin.html 登入用）—— 就是 <code>ADMIN_PASSWORD</code> 這個 secret，去上面路徑改掉重存一次即可，改完立刻生效。</li>
+    </ol>
+
+    <h3 class="block-label">常用連結</h3>
+    <div class="links">
+      <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare Dashboard</a>
+    </div>
+  </section>
+
+  <!-- GODADDY -->
+  <section class="card" id="godaddy" style="--accent:var(--a-godaddy); --accent-soft:var(--a-godaddy-soft);">
+    <div class="head">
+      <span class="tag">網域 / DNS</span>
+      <h2>GoDaddy</h2>
+    </div>
+    <p class="sub">網域註冊在這裡，DNS 記錄決定 <code>chatpersonachatlab.com</code> 指向 GitHub Pages。</p>
+
+    <h3 class="block-label">重點資訊</h3>
+    <dl class="facts">
+      <dt>網域</dt><dd><code>chatpersonachatlab.com</code></dd>
+      <dt>www 記錄</dt><dd><code>CNAME</code> → GitHub Pages（改用的是 GoDaddy 原本內建的 www 記錄，不是新增的）</dd>
+      <dt>根網域記錄</dt><dd>4 筆 <code>A</code> 記錄 @ → <code>185.199.108.153</code> / <code>109.153</code> / <code>110.153</code> / <code>111.153</code>（GitHub Pages 固定 IP）</dd>
+      <dt>信箱</dt><dd>自訂網域信箱轉發卡在 Google Workspace 流程，目前對外聯絡改用既有的 <code>chatpersonalab.service@gmail.com</code></dd>
+    </dl>
+
+    <h3 class="block-label">常見操作</h3>
+    <ol class="tasks">
+      <li><b>網站突然打不開 / 出現憑證錯誤</b> —— 先去 <a href="https://dnschecker.org" target="_blank" rel="noopener" style="color:var(--accent)">dnschecker.org</a> 查 <code>chatpersonachatlab.com</code> 的 A 記錄是不是全球都指到上面那 4 個 IP，通常是 DNS 還沒傳播完，等一下就好。</li>
+    </ol>
+
+    <h3 class="block-label">常用連結</h3>
+    <div class="links">
+      <a href="https://dcc.godaddy.com/" target="_blank" rel="noopener">GoDaddy 我的產品</a>
+    </div>
+  </section>
+
+  <!-- FILES -->
+  <section class="card" id="files" style="--accent:var(--a-files); --accent-soft:var(--a-files-soft);">
+    <div class="head">
+      <span class="tag">原始碼結構</span>
+      <h2>檔案地圖</h2>
+    </div>
+    <p class="sub">Repo 裡實際存在的檔案，跟各自的用途。</p>
+
+    <div class="filetree">
+<span class="path">index.html</span>            <span class="note">— 主網站（免費版人格分析＋付費版關係分析）</span>
+<span class="path">admin.html</span>            <span class="note">— 訂單後台，chatpersonachatlab.com/admin.html</span>
+<span class="path">CNAME</span>                 <span class="note">— GitHub Pages 自訂網域設定</span>
+<span class="path">.github/workflows/</span>
+<span class="indent path">deploy-pages.yml</span>  <span class="note">— push 到 main 自動部署網站的腳本</span>
+<span class="path">worker/</span>
+<span class="indent path">src/*.js</span>          <span class="note">— Worker 原始碼，模組化（有終端機才用得到）</span>
+<span class="indent path">dashboard-bundle.js</span> <span class="note">— 上面原始碼打包成單一檔案，貼到 Cloudflare 網頁編輯器用</span>
+<span class="indent path">build-bundle.py</span>   <span class="note">— 改完 src/ 後，重新產生 dashboard-bundle.js 的小工具</span>
+<span class="indent path">schema.sql</span>        <span class="note">— D1 資料庫的資料表結構</span>
+<span class="indent path">wrangler.toml</span>     <span class="note">— Worker 設定檔（給 wrangler CLI 用）</span>
+<span class="indent path">README.md</span>         <span class="note">— 完整技術文件：金鑰設定、部署方式、API 清單</span>
+    </div>
+  </section>
+
+  <!-- PAYMENT -->
+  <section class="card" id="payment" style="--accent:var(--a-payment); --accent-soft:var(--a-payment-soft);">
+    <div class="head">
+      <span class="tag">收款</span>
+      <h2>藍新金流（NewebPay）</h2>
+    </div>
+    <p class="sub">付費版 NT$99 report 要收真錢，需要的特約商店資格。</p>
+
+    <div class="status-row">
+      <span class="pip"></span>
+      特約商店申請中，等待審核結果
+    </div>
+
+    <h3 class="block-label">核准後要做的事</h3>
+    <ol class="tasks">
+      <li>跟藍新後台拿 <b>MerchantID</b>、<b>HashKey</b>、<b>HashIV</b>。</li>
+      <li>把這三個值加到 Cloudflare Worker 的 Secrets 裡：<code>NEWEBPAY_MERCHANT_ID</code>、<code>NEWEBPAY_HASH_KEY</code>、<code>NEWEBPAY_HASH_IV</code>，再加上 <code>NEWEBPAY_RETURN_URL</code> / <code>NEWEBPAY_NOTIFY_URL</code>。</li>
+      <li>不用改任何程式碼——串接邏輯（加解密、簽章驗證）已經寫好在等這幾個值，設定完直接生效。</li>
+    </ol>
+
+    <div class="warn-box">
+      <b>提醒：</b>這三個金鑰跟後台密碼一樣，只存在 Cloudflare 的 Secrets 裡，不會出現在 GitHub 的任何檔案或這份文件中。
+    </div>
+  </section>
+
+  <!-- DECISION LOG -->
+  <section class="card" id="log" style="--accent:var(--ink-dim); --accent-soft:var(--line);">
+    <div class="head">
+      <span class="tag">已經決定的事</span>
+      <h2>決策紀錄</h2>
+    </div>
+    <p class="sub">避免之後忘記「當初為什麼這樣做」。</p>
+    <ul class="decisions">
+      <li><span class="check">✓</span>目前只做一次性購買（NT$99／份），拿掉月繳／年繳方案 —— 網站沒有登入帳號機制，無法真的記住使用者身分來續扣款。</li>
+      <li><span class="check">✓</span>付費報告裡的「追問對話」改成只用一小段 AI 摘錄當背景，不再每次都重送整份聊天紀錄，省下大部分 token 費用；同時每個事件最多追問 8 次。</li>
+      <li><span class="check">✓</span>付款前會顯示「虛擬商品不可退貨」告知並要求勾選同意，才能繼續付款（依通訊交易解除權合理例外情事適用準則第2條第7款）。</li>
+    </ul>
+  </section>
+
+  <footer>chatpersonachatlab.com</footer>
+
+</div>
