@@ -36,6 +36,7 @@
     padding:32px 16px; overflow-x:hidden;
   }
   .stagelabel{
+    display:none; /* 開發用的畫面編號標籤，不對外顯示；JS 仍會更新它的文字，保留 DOM 元素避免其他程式碼出錯 */
     position:fixed; top:14px; left:50%; transform:translateX(-50%);
     font-family:"Cormorant Garamond", serif; font-style:italic; font-size:12px;
     letter-spacing:0.18em; color:var(--ink-dim); z-index:50; text-align:center; pointer-events:none;
