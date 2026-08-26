@@ -8,7 +8,33 @@
 2. 左側選單找到 **API Keys**，點 **Create Key**，複製產生的金鑰（格式類似 `sk-ant-...`，只會顯示一次，先存好）。
 3. 到 **Billing** 加值一些額度（就算是免費試用額度也需要綁定，才能實際呼叫 API）。
 
-## 2. 安裝 wrangler 並登入 Cloudflare
+## 2. 部署 Worker
+
+有兩種方式，選一種就好：
+
+### 方法 A：沒有終端機／不想用指令（網頁操作）
+
+用 `dashboard-bundle.js` 這個檔案，整個 Worker 的程式碼都合併在這一份裡，用複製貼上就能部署，不需要安裝任何東西。
+
+1. 前往 https://dash.cloudflare.com/ 註冊/登入帳號（免費方案就夠用）。
+2. 左側選單找 **Workers & Pages** → 點 **Create**（或 **Create application**）。
+3. 選 **Create Worker**，取個名字（例如 `chat-persona-api`），點 **Deploy** 先建立一個預設的 Worker。
+4. 部署完成後點 **Edit code**（或 **Continue to project** → 進到編輯器頁面），會看到一個線上程式碼編輯器，裡面預設有一段範例程式碼。
+5. 打開這個 repo 裡的 `worker/dashboard-bundle.js`，全選（Ctrl/Cmd+A）複製全部內容。
+6. 回到 Cloudflare 的編輯器，把裡面原本的範例程式碼全選、刪除，貼上你剛複製的內容。
+7. 點右上角 **Save and deploy**（或 **Deploy**）。
+8. 部署完成後，回到 Worker 的概覽頁（**Settings** 附近），找到 **Variables and Secrets**（變數與密鑰）區塊：
+   - 新增一筆變數，名稱填 `ANTHROPIC_API_KEY`，值貼上你的 `sk-ant-...` 金鑰，類型選 **Secret / Encrypt**（加密），儲存。
+   - 存好後通常需要重新部署一次（頁面上會有提示按鈕）讓新變數生效。
+9. 回到 Worker 概覽頁，網址通常會顯示在頁面上方，長得像：
+   ```
+   https://chat-persona-api.<你的 subdomain>.workers.dev
+   ```
+   複製這個網址，留著下一步用。
+
+之後如果我（Claude）有更新 `worker/src/` 裡的程式碼，需要請我重新產生一次 `dashboard-bundle.js`，你再回到編輯器整份覆蓋貼上、重新部署一次即可。
+
+### 方法 B：有終端機，用 wrangler 指令部署
 
 ```bash
 cd worker
@@ -16,7 +42,7 @@ npm install
 npx wrangler login   # 會開瀏覽器要你登入/註冊 Cloudflare 帳號並授權
 ```
 
-## 3. 設定金鑰（不會進到程式碼或 git）
+設定金鑰（不會進到程式碼或 git）：
 
 ```bash
 npx wrangler secret put ANTHROPIC_API_KEY
@@ -27,7 +53,7 @@ npx wrangler secret put ALLOWED_ORIGIN
 # 例如輸入：https://your-github-username.github.io
 ```
 
-## 4. 部署
+部署：
 
 ```bash
 npx wrangler deploy
@@ -41,7 +67,7 @@ https://chat-persona-api.<你的 subdomain>.workers.dev
 
 複製這個網址。
 
-## 5. 讓前端接上這個網址
+## 3. 讓前端接上這個網址
 
 打開 repo 根目錄的 `index.html`，找到這一行（在 `<script>` 區塊靠前面的地方）：
 
