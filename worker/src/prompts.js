@@ -132,8 +132,12 @@ const timelineEventSchema = {
     summary: { type: 'string', description: '具體描述當時對話內容發生了什麼' },
     interpretation: { type: 'string', description: '對這個事件的解讀，說明代表的意義' },
     impact: { type: 'string', description: '這個事件之後對關係造成的後續影響' },
+    relevantExcerpt: {
+      type: 'string',
+      description: '從原始對話中擷取一小段（100-250字內）跟這個事件最相關的原文或改寫重點。這段文字之後會被單獨保存，使用者針對這個事件追問時只會用這段當上下文，不會重新讀取整份對話，所以要包含足夠的具體細節（例如關鍵句子、語氣、雙方怎麼說的），不要只是重複 summary 的空泛敘述。',
+    },
   },
-  required: ['date', 'title', 'summary', 'interpretation', 'impact'],
+  required: ['date', 'title', 'summary', 'interpretation', 'impact', 'relevantExcerpt'],
 };
 
 const milestoneInterpSchema = {
@@ -143,8 +147,12 @@ const milestoneInterpSchema = {
     summary: { type: 'string' },
     interpretation: { type: 'string' },
     impact: { type: 'string' },
+    relevantExcerpt: {
+      type: 'string',
+      description: '從原始對話中擷取一小段（100-250字內）跟這個時刻最相關的原文或改寫重點，用途同 timeline 事件的 relevantExcerpt——之後使用者追問只會用這段當上下文。如果對話中確實找不到對應內容，可以填空字串。',
+    },
   },
-  required: ['index', 'summary', 'interpretation', 'impact'],
+  required: ['index', 'summary', 'interpretation', 'impact', 'relevantExcerpt'],
 };
 
 export const RELATIONSHIP_TOOL = {
@@ -245,7 +253,7 @@ export function buildRelationshipMessages({ text, images, relationshipType, mile
 - 雙方常用字詞
 - 訊息／貼圖情緒的正面中性負面比例
 - 依時間分成六段的訊息量與關係溫度趨勢
-- 4-6 個關係中的重要事件時間軸，每個事件要具體引用對話內容
+- 4-6 個關係中的重要事件時間軸，每個事件要具體引用對話內容，並附上 relevantExcerpt（見下方欄位說明，之後使用者追問這個事件時只會用這段文字當依據，請確保包含足夠細節）
 - 一段對使用者個人的洞察與一段對整段關係的洞察
 - 2-3 個你想向使用者確認、能幫助你把分析寫得更準確的追問
 
@@ -286,17 +294,19 @@ ${answeredLines || '（無）'}
 }
 
 // ---------- 付費版：時間軸事件的追問對話 ----------
+// 註：這裡刻意不重新附上整份原始對話——event.relevantExcerpt 是產生報告時
+// 就已經摘錄好的相關片段，追問只依賴這一小段，避免每次追問都重燒一次
+// 兩萬 token 等級的完整對話內容。
 
-export function buildFollowupMessages({ event, question, contextText }) {
+export function buildFollowupMessages({ event, question }) {
   let text = `使用者正在查看關係分析報告中的一個時間軸事件：
 日期：${event.date || ''}　標題：${event.title || ''}
 摘要：${event.summary || ''}
-解讀：${event.interpretation || ''}
-
-使用者針對這個事件提出追問：「${question}」`;
-  if (contextText) {
-    text += `\n\n以下是原始對話紀錄，可參考其中真實內容來回答：\n"""\n${contextText}\n"""`;
+解讀：${event.interpretation || ''}`;
+  if (event.relevantExcerpt) {
+    text += `\n相關原文摘錄：${event.relevantExcerpt}`;
   }
-  text += '\n\n請用 2-4 句話、朋友聊天般自然的語氣直接回答使用者的問題，不要條列、不要開場白，直接進主題。全部使用繁體中文，不要提到「示範」或「正式版」。';
+  text += `\n\n使用者針對這個事件提出追問：「${question}」`;
+  text += '\n\n請用 2-4 句話、朋友聊天般自然的語氣直接回答使用者的問題，不要條列、不要開場白，直接進主題。全部使用繁體中文，不要提到「示範」或「正式版」。如果上面的摘錄不足以回答問題，可以老實說目前資料不夠判斷，不要憑空編造細節。';
   return [{ role: 'user', content: [{ type: 'text', text }] }];
 }

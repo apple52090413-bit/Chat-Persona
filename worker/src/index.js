@@ -84,9 +84,8 @@ async function handleRefine(request, env, body) {
 async function handleFollowup(request, env, body) {
   const event = body.event && typeof body.event === 'object' ? body.event : {};
   const question = typeof body.question === 'string' ? body.question.slice(0, 1000).trim() : '';
-  const contextText = truncateText(body.text || '');
   if (!question) throw badRequest('請輸入問題內容');
-  const messages = buildFollowupMessages({ event, question, contextText });
+  const messages = buildFollowupMessages({ event, question });
   const reply = await callClaudePlain({
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, maxTokens: 400,

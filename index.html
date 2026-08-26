@@ -1889,7 +1889,8 @@
 
     // ---- 關係大事記（AI 偵測＋使用者標記，合併顯示）----
     const aiEvents = (d.timeline||[]).map(ev=>({
-      date:ev.date, text:ev.title, source:'ai', summary:ev.summary, interp:ev.interpretation, impact:ev.impact
+      date:ev.date, text:ev.title, source:'ai', summary:ev.summary, interp:ev.interpretation, impact:ev.impact,
+      relevantExcerpt: ev.relevantExcerpt || '',
     }));
     const milestoneInterps = d.milestoneInterpretations || [];
     const userEvents = userMilestones.map((m,i)=>{
@@ -1899,6 +1900,7 @@
         summary: found ? found.summary : '這是你自己標記的時刻，AI 尚未在對話中找到明確對應內容。',
         interp: found ? found.interpretation : '可能發生在文字紀錄涵蓋範圍之外，或當時互動較少留下文字線索。',
         impact: found ? found.impact : '',
+        relevantExcerpt: found ? (found.relevantExcerpt || '') : '',
       };
     });
     currentTimelineEvents = aiEvents.concat(userEvents);
@@ -1960,12 +1962,23 @@
     return text;
   }
 
+  const MAX_FOLLOWUPS_PER_EVENT = 8;
+  const followupCounts = {};
+
   async function sendFollowup(i){
     const inputEl = document.getElementById('tlFollowup'+i);
     const val = inputEl.value.trim();
     if(!val) return;
     const thread = document.getElementById('tlChatThread'+i);
     const sendBtn = inputEl.nextElementSibling;
+
+    const usedSoFar = followupCounts[i] || 0;
+    if(usedSoFar >= MAX_FOLLOWUPS_PER_EVENT){
+      inputEl.disabled = true;
+      if(sendBtn) sendBtn.disabled = true;
+      inputEl.placeholder = '這個事件的追問已達上限';
+      return;
+    }
 
     const userBubble = document.createElement('div');
     userBubble.className = 'chat-bubble user';
@@ -1985,9 +1998,8 @@
     let replyText;
     try{
       const data = await callApi('/timeline-followup', {
-        event: { date: ev.date, title: ev.text, summary: ev.summary, interpretation: ev.interp },
+        event: { date: ev.date, title: ev.text, summary: ev.summary, interpretation: ev.interp, relevantExcerpt: ev.relevantExcerpt },
         question: val,
-        text: uploadedChatText,
       });
       replyText = data.reply || aiReplyFallback(val, '伺服器沒有回傳內容');
     } catch(err){
@@ -1999,8 +2011,12 @@
     aiBubble.className = 'chat-bubble ai';
     aiBubble.innerHTML = '<b>AI</b><p>'+replyText+'</p>';
     thread.appendChild(aiBubble);
-    inputEl.disabled = false;
-    if(sendBtn) sendBtn.disabled = false;
+
+    followupCounts[i] = usedSoFar + 1;
+    const reachedLimit = followupCounts[i] >= MAX_FOLLOWUPS_PER_EVENT;
+    inputEl.disabled = reachedLimit;
+    if(sendBtn) sendBtn.disabled = reachedLimit;
+    if(reachedLimit) inputEl.placeholder = '這個事件的追問已達上限';
   }
 
   function exitPaidUploadMode(){
