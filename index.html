@@ -966,8 +966,18 @@
       <p>按下按鈕後，會導向<b>藍新金流（NewebPay）</b>的安全付款頁面完成刷卡，我們不會接觸或儲存你的卡片資訊。</p>
     </div>
 
+    <div class="redirect-note">
+      <span class="redirect-icon">⚠️</span>
+      <p><b>退款須知：</b>本商品為「雙人關係深度報告」數位服務，付款完成、AI 開始生成報告後即視為服務已提供完成。依「通訊交易解除權合理例外情事適用準則」第2條第7款規定，非以有形媒介提供之數位內容或一經提供即完成之線上服務，經消費者事前同意後，不適用《消費者保護法》第19條之七日猶豫期（鑑賞期）規定，恕不接受退費、退貨。</p>
+    </div>
+
+    <label class="consent-item" style="margin-top:10px;">
+      <input type="checkbox" id="consentNoRefund" onchange="document.getElementById('goToNpayBtn').disabled = !this.checked;" />
+      <span>我已閱讀並同意上述<b>退款須知</b>，了解本服務為一經提供即完成之數位內容，同意服務開始提供後即不適用七日猶豫期規定</span>
+    </label>
+
     <div class="upload-bottom">
-      <button class="btn btn-primary btn-full" onclick="goTo('npay')">前往藍新金流付款 →</button>
+      <button class="btn btn-primary btn-full" id="goToNpayBtn" disabled onclick="goTo('npay')">前往藍新金流付款 →</button>
       <p class="privacy-note">🔒 原型示範，不會有任何真實金流或扣款</p>
     </div>
   </section>
@@ -2169,6 +2179,8 @@
     hidePaywall();
     document.getElementById('orderRelType').textContent =
       '關係類型：' + (selectedRelationship ? selectedRelationship : '尚未選擇（可返回補選）');
+    document.getElementById('consentNoRefund').checked = false;
+    document.getElementById('goToNpayBtn').disabled = true;
     goTo('payment');
   }
 
