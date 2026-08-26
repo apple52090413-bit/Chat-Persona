@@ -1485,6 +1485,23 @@
     return data;
   }
 
+  function validatePersonaResult(r){
+    if(!r || typeof r !== 'object') throw new Error('AI 回傳的資料格式異常，請重試一次。');
+    if(!r.scores || typeof r.scores !== 'object') throw new Error('AI 回傳的分析資料不完整，請重試一次。');
+    const needed = ['temperature','initiative','directness','investment'];
+    if(needed.some(k => typeof r.scores[k] !== 'number')) throw new Error('AI 回傳的分析資料不完整，請重試一次。');
+    if(!Array.isArray(r.keywords) || !r.insight) throw new Error('AI 回傳的分析資料不完整，請重試一次。');
+    return r;
+  }
+
+  function validateRelationshipResult(r){
+    if(!r || typeof r !== 'object') throw new Error('AI 回傳的資料格式異常，請重試一次。');
+    if(!r.personA || !r.personB || !r.conflict || !Array.isArray(r.interactionSplit) || !Array.isArray(r.timeline)){
+      throw new Error('AI 回傳的分析資料不完整，請重試一次。');
+    }
+    return r;
+  }
+
   function fileToBase64(file){
     return new Promise((resolve, reject)=>{
       const reader = new FileReader();
@@ -1674,7 +1691,7 @@
       if(!paidMode){
         const images = await collectImagePayload();
         const result = await callApi('/analyze-persona', { text: uploadedChatText, images });
-        lastPersonaResult = result;
+        lastPersonaResult = validatePersonaResult(result);
         clearInterval(cycle);
         fill.style.width = '100%';
         setTimeout(()=>{ goTo('reveal'); prepareCard(); }, 300);
@@ -1686,7 +1703,7 @@
           relationshipType: selectedRelationship || '曖昧',
           milestones: userMilestones,
         });
-        lastRelationshipDraft = result;
+        lastRelationshipDraft = validateRelationshipResult(result);
         clearInterval(cycle);
         fill.style.width = '100%';
         setTimeout(()=>{ prepareAiQuestions(); goTo('aiAsk'); }, 300);
