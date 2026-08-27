@@ -256,6 +256,8 @@
   .back-btn:hover{ color:var(--gold); }
   .upload-scroll{ overflow-y:auto; flex:1; min-height:0; scrollbar-width:none; }
   .upload-scroll::-webkit-scrollbar{ display:none; }
+  .payment-scroll{ overflow-y:auto; flex:1; min-height:0; scrollbar-width:none; }
+  .payment-scroll::-webkit-scrollbar{ display:none; }
   .section-title{ font-size:20px; line-height:1.5; margin:8px 0 14px; }
   .field-label{
     font-size:11px; letter-spacing:.12em; color:var(--ink-dim); text-transform:uppercase;
@@ -1065,6 +1067,7 @@
   <!-- SCREEN: PAYMENT -->
   <section class="screen" data-screen="payment">
     <button class="back-btn" onclick="goTo('reveal')">← 返回</button>
+    <div class="payment-scroll">
     <p class="eyebrow">STEP 2 · 完成付款</p>
     <h2 class="section-title">解鎖雙人關係報告</h2>
 
@@ -1115,6 +1118,7 @@
         <span class="footer-sep">·</span>
         <a class="footer-link" href="mailto:chatpersonalab.service@gmail.com">客服信箱：chatpersonalab.service@gmail.com</a>
       </div>
+    </div>
     </div>
   </section>
 
