@@ -1520,11 +1520,23 @@
     return r;
   }
 
+  // 這裡故意檢查到巢狀欄位（例如 conflict.tags、personA.traits），不是只看
+  // 最外層的 key 有沒有出現 —— 之前發生過 conflict 物件本身有出現、但裡面的
+  // tags 陣列漏掉，畫面在 d.conflict.tags.map(...) 直接爆掉、後面全部空白的
+  // 情況。後端也有做同一層級的檢查會先重試一次，這裡是最後一道防線：真的
+  // 還是不完整的話，寧可清楚地告訴使用者「請重試」，也不要生出一份殘缺的報告。
   function validateRelationshipResult(r){
     if(!r || typeof r !== 'object') throw new Error('AI 回傳的資料格式異常，請重試一次。');
-    if(!r.personA || !r.personB || !r.conflict || !Array.isArray(r.interactionSplit) || !Array.isArray(r.timeline)){
-      throw new Error('AI 回傳的分析資料不完整，請重試一次。');
-    }
+    const bad = () => { throw new Error('AI 回傳的分析資料不完整，請重試一次。'); };
+    if(!r.personA || !Array.isArray(r.personA.traits) || !r.personA.code || !r.personA.description) bad();
+    if(!r.personB || !Array.isArray(r.personB.traits) || !r.personB.code || !r.personB.description) bad();
+    if(!r.conflict || !Array.isArray(r.conflict.tags) || r.conflict.frequency===undefined || !r.conflict.unit || !r.conflict.description) bad();
+    if(!Array.isArray(r.interactionSplit) || r.interactionSplit.some(m => !m || typeof m.userPct !== 'number' || !m.label)) bad();
+    if(!Array.isArray(r.keywords)) bad();
+    if(!r.stickerMoodA || !r.stickerMoodB) bad();
+    if(!Array.isArray(r.monthLabels) || !Array.isArray(r.monthlyMessageCounts) || !Array.isArray(r.temperatureTrend)) bad();
+    if(!Array.isArray(r.timeline) || !r.timeline.length || r.timeline.some(ev => !ev || !ev.date || !ev.title || !ev.summary || !ev.interpretation)) bad();
+    if(!Array.isArray(r.milestoneInterpretations)) bad();
     return r;
   }
 

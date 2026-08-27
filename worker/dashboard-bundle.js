@@ -86,9 +86,37 @@ async function postToAnthropic(apiKey, body) {
   throw lastErr;
 }
 
-function isValidToolInput(input, requiredKeys) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
-  return requiredKeys.every(key => input[key] !== undefined && input[key] !== null);
+// 遞迴檢查 tool_use 回傳的資料是不是真的符合 schema —— 不能只看最外層的
+// 必填欄位有沒有出現，因為之前發生過「conflict 這個物件本身有出現，但裡面
+// 的 tags 陣列漏掉了」這種情況：最外層檢查會誤判為合法，畫面卻因為
+// d.conflict.tags.map(...) 對 undefined 呼叫方法而整個爛掉一半。
+// 這裡沿著 schema 的 properties／items 往下走，任何一層漏了必填欄位、
+// 陣列缺元素（不足 minItems）都會被抓出來，觸發下面的重試機制。
+function isValidToolInput(input, schema) {
+  if (!schema) return true;
+  if (schema.type === 'object') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+    for (const key of schema.required || []) {
+      if (input[key] === undefined || input[key] === null) return false;
+    }
+    for (const key of Object.keys(schema.properties || {})) {
+      if (input[key] !== undefined && !isValidToolInput(input[key], schema.properties[key])) return false;
+    }
+    return true;
+  }
+  if (schema.type === 'array') {
+    if (!Array.isArray(input)) return false;
+    if (schema.minItems !== undefined && input.length < schema.minItems) return false;
+    if (schema.items) {
+      for (const item of input) {
+        if (!isValidToolInput(item, schema.items)) return false;
+      }
+    }
+    return true;
+  }
+  // 基本型別（string/integer/number）不特別驗型別是否精確吻合 ——
+  // 欄位存在與否、結構是否完整才是真正會讓畫面爛掉的原因。
+  return true;
 }
 
 function addUsage(total, usage) {
@@ -108,7 +136,6 @@ const RETRY_NUDGE = '（上一次的回覆格式不完整或把內容誤塞進�
 // Returns { result, usage } — usage is accumulated across both attempts,
 // since both are billed by Anthropic even if only the second one succeeds.
 async function callClaudeTool({ apiKey, model, system, messages, tool, maxTokens }) {
-  const requiredKeys = (tool.input_schema && tool.input_schema.required) || [];
   let lastToolUse = null;
   let usage = { input_tokens: 0, output_tokens: 0 };
 
@@ -125,7 +152,7 @@ async function callClaudeTool({ apiKey, model, system, messages, tool, maxTokens
     usage = addUsage(usage, data.usage);
     const toolUse = (data.content || []).find(b => b.type === 'tool_use' && b.name === tool.name);
     if (toolUse) lastToolUse = toolUse;
-    if (toolUse && isValidToolInput(toolUse.input, requiredKeys)) {
+    if (toolUse && isValidToolInput(toolUse.input, tool.input_schema)) {
       return { result: toolUse.input, usage };
     }
   }
@@ -1080,7 +1107,7 @@ async function handlePersona(request, env, body) {
   return callClaudeToolLogged(env, {
     endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
-    system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 2048,
+    system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 3000,
   });
 }
 
@@ -1097,7 +1124,7 @@ async function handleRelationship(request, env, body) {
   return callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
-    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 4096,
+    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 8000,
   });
 }
 
