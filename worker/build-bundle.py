@@ -19,6 +19,7 @@ ORDER = [
     'validate.js',
     'anthropic.js',
     'prompts.js',
+    'privacy.js',
     'auth.js',
     'newebpay.js',
     'db.js',

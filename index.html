@@ -2056,6 +2056,8 @@
       const data = await callApi('/timeline-followup', {
         event: { date: ev.date, title: ev.text, summary: ev.summary, interpretation: ev.interp, relevantExcerpt: ev.relevantExcerpt },
         question: val,
+        personAAliases: (lastRelationshipDraft && lastRelationshipDraft.personAAliases) || [],
+        personBAliases: (lastRelationshipDraft && lastRelationshipDraft.personBAliases) || [],
       });
       replyText = data.reply || aiReplyFallback(val, '伺服器沒有回傳內容');
     } catch(err){

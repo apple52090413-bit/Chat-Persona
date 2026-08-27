@@ -7,6 +7,7 @@ import {
   buildFollowupMessages,
 } from './prompts.js';
 import { FREE_TEXT_LIMIT, PAID_TEXT_LIMIT, assertWithinTextLimit, validateImages } from './validate.js';
+import { redactAliasesFromResult } from './privacy.js';
 import { logApiUsage } from './db.js';
 import {
   handleLogin, handleDashboard,
@@ -82,11 +83,21 @@ async function handlePersona(request, env, body) {
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, FREE_TEXT_LIMIT);
   const messages = buildPersonaMessages({ text, images });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 3000,
   });
+  // 保險層：不管上面的 insight 等欄位有沒有照 prompt 指示避開真實姓名，
+  // 這裡都強制把 AI 回報的稱呼換成「對方」，不依賴 AI 自己是否遵守。
+  // otherPartyAliases 故意保留在回傳結果裡（不刪掉）——前端不會特別去顯示
+  // 這個欄位，但如果之後又有其他呼叫需要重新生成文字內容，可以沿用同一份
+  // 名單繼續做遮蔽，不用重新問一次 AI。
+  return redactAliasesFromResult(
+    result,
+    [{ aliases: result.otherPartyAliases, replacement: '對方' }],
+    ['otherPartyAliases']
+  );
 }
 
 async function handleRelationship(request, env, body) {
@@ -99,11 +110,25 @@ async function handleRelationship(request, env, body) {
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 8000,
   });
+  // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
+  // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——
+  // 這就是使用者反映「對方名字直接跑出來」這個問題的實際防線。
+  // personAAliases/personBAliases 故意保留在回傳結果裡：前端會把整個結果存成
+  // lastRelationshipDraft，之後呼叫 /refine-relationship 時會整包送回來，
+  // 讓 handleRefine 能沿用同一份名單繼續遮蔽新生成的文字，不用重新問一次 AI。
+  return redactAliasesFromResult(
+    result,
+    [
+      { aliases: result.personAAliases, replacement: '你' },
+      { aliases: result.personBAliases, replacement: '對方' },
+    ],
+    ['personAAliases', 'personBAliases']
+  );
 }
 
 async function handleRefine(request, env, body) {
@@ -111,11 +136,17 @@ async function handleRefine(request, env, body) {
   const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!draft || typeof draft !== 'object') throw badRequest('缺少原始分析結果');
   const messages = buildRefineMessages({ draft, answers });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'refine-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: REFINE_TOOL, maxTokens: 1024,
   });
+  // 這一步是重寫兩段洞察文字，使用者補充回答的內容也可能夾帶真實姓名，
+  // 所以一樣要用原本那份名單（沿用自 draft，不用重新問 AI）做同樣的保險遮蔽。
+  return redactAliasesFromResult(result, [
+    { aliases: draft.personAAliases, replacement: '你' },
+    { aliases: draft.personBAliases, replacement: '對方' },
+  ]);
 }
 
 async function handleFollowup(request, env, body) {
@@ -128,7 +159,13 @@ async function handleFollowup(request, env, body) {
     system: SYSTEM_PROMPT_BASE, messages, maxTokens: 400,
   });
   await logUsage(env, { endpoint: 'timeline-followup', usage });
-  return { reply };
+  // 使用者自己打的追問問題也可能夾帶真實姓名（例如「小明為什麼會這樣」），
+  // AI 回覆時可能原樣覆誦回來，所以一樣要用同一份名單做保險遮蔽。
+  const { reply: redactedReply } = redactAliasesFromResult({ reply }, [
+    { aliases: body.personAAliases, replacement: '你' },
+    { aliases: body.personBAliases, replacement: '對方' },
+  ]);
+  return { reply: redactedReply };
 }
 
 // ---------- 路由表 ----------

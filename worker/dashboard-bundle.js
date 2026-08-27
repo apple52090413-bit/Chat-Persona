@@ -191,11 +191,12 @@ async function callClaudePlain({ apiKey, model, system, messages, maxTokens }) {
 // ---------- prompts.js ----------
 const SYSTEM_PROMPT_BASE = `你是「聊天人格分析」網站背後的分析引擎。你的任務是根據使用者提供的真實聊天紀錄，做語氣、互動模式與關係動態的分析。規則：
 1. 全程使用繁體中文（台灣用語）。
-2. 分析必須基於你實際讀到的文字內容，不能憑空捏造與內容矛盾的細節；文字沒有明確資訊的地方（例如確切訊息則數），可以合理估算。
-3. 語氣自然、像懂心理學又懂聊天的朋友在幫忙解讀，不要說教、不要條列免責聲明、不要提到「我是AI」或「這是示範」。
-4. 給分數時要根據實際觀察到的傾向給出有區分度的數字，不要每項都給 50 附近的安全值。
-5. 一律透過提供的工具（tool use）回傳結構化結果，不要在工具呼叫之外輸出任何文字。
-6. 如果對話內容過短或資訊不足，仍要盡力給出合理推論，並讓數字/描述反映內容確實較單薄的狀況，不要因此拒絕分析。`;
+2. 【隱私保護，最高優先，任何情況都不能違反】對話原文裡如果出現使用者本人或對方的真實姓名、暱稱、綽號、帳號、電話、Email、地址、學校或公司全名等可以直接指認身份的資訊，你回傳的所有文字欄位（包含摘要、洞察、事件描述、原文摘錄等）一律不能原樣照抄這些身份資訊。提到使用者本人永遠只能稱「你」，提到對話中的另一方永遠只能稱「對方」——即使原文裡雙方是用真實姓名、綽號或暱稱互相稱呼，你也絕對不能把那個名字寫進回覆的任何欄位裡，包含看起來像是「原文引用」的欄位也一樣，要先換成「你」/「對方」再寫進去。如果原文裡有其他具體到可以指認身份的細節（例如完整地址、特定門牌、電話號碼、罕見的地標全名），也要用模糊、概括的方式改寫（例如「住的地方附近」「一間咖啡廳」），但不影響你對事件經過、情緒、互動模式本身的描述與解讀——你分析的是「發生了什麼、代表什麼意義」，不是要留存對話雙方的身份細節。
+3. 分析必須基於你實際讀到的文字內容，不能憑空捏造與內容矛盾的細節；文字沒有明確資訊的地方（例如確切訊息則數），可以合理估算。
+4. 語氣自然、像懂心理學又懂聊天的朋友在幫忙解讀，不要說教、不要條列免責聲明、不要提到「我是AI」或「這是示範」。
+5. 給分數時要根據實際觀察到的傾向給出有區分度的數字，不要每項都給 50 附近的安全值。
+6. 一律透過提供的工具（tool use）回傳結構化結果，不要在工具呼叫之外輸出任何文字。
+7. 如果對話內容過短或資訊不足，仍要盡力給出合理推論，並讓數字/描述反映內容確實較單薄的狀況，不要因此拒絕分析。`;
 
 function imageBlocks(images) {
   return images.map(img => ({
@@ -266,8 +267,13 @@ const PERSONA_TOOL = {
         maxItems: 6,
         description: '每段的訊息則數估計值',
       },
+      otherPartyAliases: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '對話原文中用來稱呼「對話中另一方」（不是使用者本人）的真實姓名、綽號或暱稱，把你在對話裡實際看到的每一種稱呼方式都列出來（同一個人可能被叫好幾種名字都要列）。如果對話中完全沒有出現對方的姓名或綽號，回傳空陣列。這個欄位只是給系統做隱私遮蔽用，不會直接顯示給使用者看，跟上面 insight 等欄位裡是否已經避開姓名無關——不管你上面寫得如何，這裡都要盡量列出你看到的所有稱呼。',
+      },
     },
-    required: ['personaCode', 'messageCount', 'scores', 'keywords', 'insight', 'monthLabels', 'monthlySentenceCounts', 'monthlyMessageCounts'],
+    required: ['personaCode', 'messageCount', 'scores', 'keywords', 'insight', 'monthLabels', 'monthlySentenceCounts', 'monthlyMessageCounts', 'otherPartyAliases'],
   },
 };
 
@@ -287,7 +293,9 @@ function buildPersonaMessages({ text, images }) {
 5. 創意型 - 想像力豐富、跳躍思考
 6. 理性型 - 理性觀察、字字斟酌
 
-請選出最符合的一種，並呼叫 submit_persona_analysis 工具回傳完整結果。${conversationBlock(text)}`;
+請選出最符合的一種，並呼叫 submit_persona_analysis 工具回傳完整結果。
+
+再次提醒：下面的對話原文裡不管雙方實際上是用什麼真實姓名或綽號互相稱呼，你回傳的欄位裡提到使用者本人一律寫「你」、提到對話中的另一方一律寫「對方」，絕對不能把對話中出現的真實姓名或綽號寫進 insight 或其他任何欄位。${conversationBlock(text)}`;
   content.push({ type: 'text', text: instructions });
   return [{ role: 'user', content }];
 }
@@ -299,7 +307,7 @@ const personProfileSchema = {
   properties: {
     code: { type: 'string', description: '一個簡短的個性標籤，例如「直球型」「幽默型」，可自由發想' },
     traits: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
-    description: { type: 'string', description: '2 句話左右的個性描述，需具體引用對話中的互動模式' },
+    description: { type: 'string', description: '2 句話左右的個性描述，需具體描述對話中觀察到的互動模式（但不能直接引用對話原文裡雙方互相稱呼的姓名或綽號，一律用「你」/「對方」代稱）' },
   },
   required: ['code', 'traits', 'description'],
 };
@@ -325,7 +333,7 @@ const timelineEventSchema = {
     impact: { type: 'string', description: '這個事件之後對關係造成的後續影響' },
     relevantExcerpt: {
       type: 'string',
-      description: '從原始對話中擷取一小段（100-250字內）跟這個事件最相關的原文或改寫重點。這段文字之後會被單獨保存，使用者針對這個事件追問時只會用這段當上下文，不會重新讀取整份對話，所以要包含足夠的具體細節（例如關鍵句子、語氣、雙方怎麼說的），不要只是重複 summary 的空泛敘述。',
+      description: '從原始對話中擷取一小段（100-250字內）跟這個事件最相關的內容重點。這段文字之後會被單獨保存，使用者針對這個事件追問時只會用這段當上下文，不會重新讀取整份對話，所以要包含足夠的具體細節（例如關鍵句子、語氣、雙方怎麼說的），不要只是重複 summary 的空泛敘述。⚠️ 這裡不是逐字複製對話原文——如果原文裡雙方是用真實姓名或綽號互相稱呼，寫進這裡之前要先換成「你」/「對方」，句子內容跟語氣可以保留，但身份資訊不行。',
     },
   },
   required: ['date', 'title', 'summary', 'interpretation', 'impact', 'relevantExcerpt'],
@@ -340,7 +348,7 @@ const milestoneInterpSchema = {
     impact: { type: 'string' },
     relevantExcerpt: {
       type: 'string',
-      description: '從原始對話中擷取一小段（100-250字內）跟這個時刻最相關的原文或改寫重點，用途同 timeline 事件的 relevantExcerpt——之後使用者追問只會用這段當上下文。如果對話中確實找不到對應內容，可以填空字串。',
+      description: '從原始對話中擷取一小段（100-250字內）跟這個時刻最相關的內容重點，用途同 timeline 事件的 relevantExcerpt——之後使用者追問只會用這段當上下文。如果對話中確實找不到對應內容，可以填空字串。同樣要注意：不能逐字複製原文中雙方互相稱呼的真實姓名或綽號，一律先換成「你」/「對方」再寫進來。',
     },
   },
   required: ['index', 'summary', 'interpretation', 'impact', 'relevantExcerpt'],
@@ -414,11 +422,22 @@ const RELATIONSHIP_TOOL = {
         maxItems: 3,
         description: '2-3 個你想向使用者確認、能幫助你把分析寫得更準確的問題，必須針對這段對話中你觀察到但無法單從文字判斷的地方提問',
       },
+      personAAliases: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '對話原文中用來稱呼「使用者本人」（也就是 personA）的真實姓名、綽號或暱稱，把你在對話裡實際看到的每一種稱呼方式都列出來（同一個人可能被叫好幾種名字都要列）。如果完全沒有出現，回傳空陣列。這個欄位只是給系統做隱私遮蔽用，不會直接顯示給使用者看——不管你上面其他欄位寫得如何，這裡都要盡量列出你看到的所有稱呼。',
+      },
+      personBAliases: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '對話原文中用來稱呼「對方」（也就是 personB）的真實姓名、綽號或暱稱，把你在對話裡實際看到的每一種稱呼方式都列出來。如果完全沒有出現，回傳空陣列。這個欄位只是給系統做隱私遮蔽用，不會直接顯示給使用者看。',
+      },
     },
     required: [
       'chemistryScore', 'totalMessages', 'personA', 'personB', 'conflict', 'interactionSplit',
       'keywords', 'stickerMoodA', 'stickerMoodB', 'monthLabels', 'monthlyMessageCounts',
       'temperatureTrend', 'timeline', 'milestoneInterpretations', 'personalInsight', 'overallInsight', 'followUpQuestions',
+      'personAAliases', 'personBAliases',
     ],
   },
 };
@@ -448,7 +467,9 @@ function buildRelationshipMessages({ text, images, relationshipType, milestones 
 - 一段對使用者個人的洞察與一段對整段關係的洞察
 - 2-3 個你想向使用者確認、能幫助你把分析寫得更準確的追問
 
-請呼叫 submit_relationship_analysis 工具回傳結果。全部使用繁體中文，語氣像朋友幫忙解讀對話一樣自然，不要客套或說教，數字要有區分度、符合實際觀察。${conversationBlock(text)}`;
+請呼叫 submit_relationship_analysis 工具回傳結果。全部使用繁體中文，語氣像朋友幫忙解讀對話一樣自然，不要客套或說教，數字要有區分度、符合實際觀察。
+
+再次提醒：下面的對話原文裡不管雙方實際上是用什麼真實姓名或綽號互相稱呼，你回傳的每一個欄位（personA/personB 的描述、conflict、timeline 的 summary/interpretation/relevantExcerpt、milestoneInterpretations、personalInsight、overallInsight 全部包含在內）提到使用者本人一律寫「你」、提到另一方一律寫「對方」，絕對不能把對話中出現的真實姓名或綽號原封不動寫進任何欄位。${conversationBlock(text)}`;
   content.push({ type: 'text', text: instructions });
   return [{ role: 'user', content }];
 }
@@ -480,6 +501,8 @@ function buildRefineMessages({ draft, answers }) {
 使用者的補充回答：
 ${answeredLines || '（無）'}
 
+提到使用者本人一律稱「你」、提到另一方一律稱「對方」，就算使用者補充回答裡自己打了真實姓名或綽號，也不要把那個名字寫進新的兩段文字裡。
+
 請呼叫 submit_refined_insight 工具回傳新的兩段文字。`;
   return [{ role: 'user', content: [{ type: 'text', text }] }];
 }
@@ -498,8 +521,77 @@ function buildFollowupMessages({ event, question }) {
     text += `\n相關原文摘錄：${event.relevantExcerpt}`;
   }
   text += `\n\n使用者針對這個事件提出追問：「${question}」`;
-  text += '\n\n請用 2-4 句話、朋友聊天般自然的語氣直接回答使用者的問題，不要條列、不要開場白，直接進主題。全部使用繁體中文，不要提到「示範」或「正式版」。如果上面的摘錄不足以回答問題，可以老實說目前資料不夠判斷，不要憑空編造細節。';
+  text += '\n\n請用 2-4 句話、朋友聊天般自然的語氣直接回答使用者的問題，不要條列、不要開場白，直接進主題。全部使用繁體中文，不要提到「示範」或「正式版」。如果上面的摘錄不足以回答問題，可以老實說目前資料不夠判斷，不要憑空編造細節。提到使用者本人一律稱「你」、提到另一方一律稱「對方」，不要在回覆裡寫出任何真實姓名或綽號。';
   return [{ role: 'user', content: [{ type: 'text', text }] }];
+}
+
+// ---------- privacy.js ----------
+// 隱私遮蔽的「保險層」：prompts.js 裡已經有很明確的指示要求 AI 不要把真實
+// 姓名/綽號寫進回覆內容，但那終究是機率性的（AI 有可能忘記、尤其是長對話）。
+// 這裡加一層決定性的保護——請 AI 額外回報「對話裡用什麼稱呼指這個人」
+// （personAAliases / personBAliases / otherPartyAliases），拿到之後不管
+// AI 本來寫的內容有沒有照規則做，程式碼都會把這些稱呼從回傳結果的每一個
+// 字串欄位裡強制換成「你」／「對方」，不依賴 AI 自己是否遵守指示。
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 只保留看起來像真的姓名/綽號的字串：至少 2 個字，且不是「你」「對方」「我」
+// 這種本來就該用的代稱（避免誤判把正常代稱也拿去做全文取代，弄壞其他句子）。
+function sanitizeAliases(aliases) {
+  if (!Array.isArray(aliases)) return [];
+  const skip = new Set(['你', '我', '他', '她', '對方', '妳']);
+  return aliases
+    .filter(a => typeof a === 'string')
+    .map(a => a.trim())
+    .filter(a => a.length >= 2 && !skip.has(a));
+}
+
+function redactValue(value, aliasMap) {
+  if (typeof value === 'string') {
+    let out = value;
+    for (const [alias, replacement] of aliasMap) {
+      out = out.replace(new RegExp(escapeRegex(alias), 'gi'), replacement);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) return value.map(v => redactValue(v, aliasMap));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = redactValue(value[key], aliasMap);
+    return out;
+  }
+  return value;
+}
+
+// aliasGroups 例如 [{ aliases: result.personAAliases, replacement: '你' }, { aliases: result.personBAliases, replacement: '對方' }]
+// 回傳一份新的物件（不修改原本的 result），並把 *Aliases 這種只給系統內部用的
+// 欄位拿掉，不需要讓前端看到。
+// aliasFieldNames：result 裡面「別名清單本身」放在哪幾個 key（例如
+// personAAliases/personBAliases）。這幾個欄位要從取代範圍裡排除，不然清單
+// 自己列出的名字會被規則自己取代掉（例如 personBAliases:['小美'] 變成
+// ['對方']），之後 refine／followup 想沿用同一份名單就找不到原始名字了。
+function redactAliasesFromResult(result, aliasGroups, aliasFieldNames = []) {
+  const pairs = [];
+  for (const { aliases, replacement } of aliasGroups) {
+    for (const alias of sanitizeAliases(aliases)) pairs.push([alias, replacement]);
+  }
+  // 長的稱呼先換，避免短稱呼剛好是長稱呼的一部分，把長稱呼提前拆散。
+  pairs.sort((a, b) => b[0].length - a[0].length);
+
+  if (!pairs.length) return { ...result };
+
+  const preserved = {};
+  const toRedact = { ...result };
+  for (const field of aliasFieldNames) {
+    if (field in toRedact) {
+      preserved[field] = toRedact[field];
+      delete toRedact[field];
+    }
+  }
+
+  return { ...redactValue(toRedact, pairs), ...preserved };
 }
 
 // ---------- auth.js ----------
@@ -1104,11 +1196,21 @@ async function handlePersona(request, env, body) {
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, FREE_TEXT_LIMIT);
   const messages = buildPersonaMessages({ text, images });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 3000,
   });
+  // 保險層：不管上面的 insight 等欄位有沒有照 prompt 指示避開真實姓名，
+  // 這裡都強制把 AI 回報的稱呼換成「對方」，不依賴 AI 自己是否遵守。
+  // otherPartyAliases 故意保留在回傳結果裡（不刪掉）——前端不會特別去顯示
+  // 這個欄位，但如果之後又有其他呼叫需要重新生成文字內容，可以沿用同一份
+  // 名單繼續做遮蔽，不用重新問一次 AI。
+  return redactAliasesFromResult(
+    result,
+    [{ aliases: result.otherPartyAliases, replacement: '對方' }],
+    ['otherPartyAliases']
+  );
 }
 
 async function handleRelationship(request, env, body) {
@@ -1121,11 +1223,25 @@ async function handleRelationship(request, env, body) {
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 8000,
   });
+  // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
+  // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——
+  // 這就是使用者反映「對方名字直接跑出來」這個問題的實際防線。
+  // personAAliases/personBAliases 故意保留在回傳結果裡：前端會把整個結果存成
+  // lastRelationshipDraft，之後呼叫 /refine-relationship 時會整包送回來，
+  // 讓 handleRefine 能沿用同一份名單繼續遮蔽新生成的文字，不用重新問一次 AI。
+  return redactAliasesFromResult(
+    result,
+    [
+      { aliases: result.personAAliases, replacement: '你' },
+      { aliases: result.personBAliases, replacement: '對方' },
+    ],
+    ['personAAliases', 'personBAliases']
+  );
 }
 
 async function handleRefine(request, env, body) {
@@ -1133,11 +1249,17 @@ async function handleRefine(request, env, body) {
   const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!draft || typeof draft !== 'object') throw badRequest('缺少原始分析結果');
   const messages = buildRefineMessages({ draft, answers });
-  return callClaudeToolLogged(env, {
+  const result = await callClaudeToolLogged(env, {
     endpoint: 'refine-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: REFINE_TOOL, maxTokens: 1024,
   });
+  // 這一步是重寫兩段洞察文字，使用者補充回答的內容也可能夾帶真實姓名，
+  // 所以一樣要用原本那份名單（沿用自 draft，不用重新問 AI）做同樣的保險遮蔽。
+  return redactAliasesFromResult(result, [
+    { aliases: draft.personAAliases, replacement: '你' },
+    { aliases: draft.personBAliases, replacement: '對方' },
+  ]);
 }
 
 async function handleFollowup(request, env, body) {
@@ -1150,7 +1272,13 @@ async function handleFollowup(request, env, body) {
     system: SYSTEM_PROMPT_BASE, messages, maxTokens: 400,
   });
   await logUsage(env, { endpoint: 'timeline-followup', usage });
-  return { reply };
+  // 使用者自己打的追問問題也可能夾帶真實姓名（例如「小明為什麼會這樣」），
+  // AI 回覆時可能原樣覆誦回來，所以一樣要用同一份名單做保險遮蔽。
+  const { reply: redactedReply } = redactAliasesFromResult({ reply }, [
+    { aliases: body.personAAliases, replacement: '你' },
+    { aliases: body.personBAliases, replacement: '對方' },
+  ]);
+  return { reply: redactedReply };
 }
 
 // ---------- 路由表 ----------
