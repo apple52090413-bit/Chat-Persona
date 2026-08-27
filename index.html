@@ -1608,17 +1608,54 @@
       const pageHeight = pdf.internal.pageSize.getHeight();
       const imgWidth = pageWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const imgData = canvas.toDataURL('image/png');
+      const pxPerMm = canvas.width / imgWidth;
+      const pageHeightPx = pageHeight * pxPerMm;
 
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      while(heightLeft > 0){
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      // A plain fixed-height slice cuts page breaks straight through
+      // cards/charts/paragraphs wherever they happen to fall. Instead,
+      // find the safe gaps between top-level report sections (pairing
+      // each ".block-label" with the content right after it, so a title
+      // never gets separated from its content) and only break there.
+      const targetRect = target.getBoundingClientRect();
+      const scaleY = canvas.height / targetRect.height;
+      const rawChildren = Array.from(target.children).filter(el => el.offsetParent !== null);
+      const blocks = [];
+      for(let i = 0; i < rawChildren.length; i++){
+        const el = rawChildren[i];
+        const r = el.getBoundingClientRect();
+        let top = (r.top - targetRect.top) * scaleY;
+        let bottom = (r.bottom - targetRect.top) * scaleY;
+        if(el.classList.contains('block-label') && rawChildren[i + 1]){
+          const nr = rawChildren[i + 1].getBoundingClientRect();
+          bottom = (nr.bottom - targetRect.top) * scaleY;
+          i++;
+        }
+        blocks.push({ top, bottom });
+      }
+      function safeBreak(y){
+        for(const b of blocks){
+          if(y > b.top + 2 && y < b.bottom - 2 && (b.bottom - b.top) < pageHeightPx) return b.top;
+        }
+        return y;
+      }
+
+      let sliceStart = 0;
+      while(sliceStart < canvas.height){
+        let sliceEnd = Math.min(sliceStart + pageHeightPx, canvas.height);
+        if(sliceEnd < canvas.height) sliceEnd = safeBreak(sliceEnd);
+        if(sliceEnd <= sliceStart) sliceEnd = Math.min(sliceStart + pageHeightPx, canvas.height);
+
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceEnd - sliceStart;
+        sliceCanvas.getContext('2d').drawImage(
+          canvas, 0, sliceStart, canvas.width, sliceEnd - sliceStart,
+          0, 0, canvas.width, sliceEnd - sliceStart
+        );
+        const sliceImgHeight = (sliceCanvas.height * imgWidth) / canvas.width;
+        if(sliceStart > 0) pdf.addPage();
+        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, sliceImgHeight);
+        sliceStart = sliceEnd;
       }
 
       const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
