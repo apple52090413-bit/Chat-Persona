@@ -113,7 +113,7 @@ async function handleRelationship(request, env, body) {
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
-    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 12000,
+    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 14000,
   });
   // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
   // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——

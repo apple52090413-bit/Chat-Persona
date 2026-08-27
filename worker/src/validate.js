@@ -1,5 +1,5 @@
 export const FREE_TEXT_LIMIT = 80000;
-export const PAID_TEXT_LIMIT = 300000;
+export const PAID_TEXT_LIMIT = 600000;
 export const MAX_IMAGES = 8;
 
 // 免費版／付費版超過字數上限時直接擋下，不做「只取最近一段」的靜默截斷 ——

@@ -1590,7 +1590,7 @@
   }
   const MAX_IMAGES = 8;
   const FREE_TEXT_LIMIT = 80000;
-  const PAID_TEXT_LIMIT = 300000;
+  const PAID_TEXT_LIMIT = 600000;
 
   function currentTextLimit(){ return paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT; }
   function isOverTextLimit(){ return !!uploadedChatText && uploadedChatText.length > currentTextLimit(); }

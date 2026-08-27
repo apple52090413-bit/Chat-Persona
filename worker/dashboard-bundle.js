@@ -7,7 +7,7 @@
 
 // ---------- validate.js ----------
 const FREE_TEXT_LIMIT = 80000;
-const PAID_TEXT_LIMIT = 300000;
+const PAID_TEXT_LIMIT = 600000;
 const MAX_IMAGES = 8;
 
 // 免費版／付費版超過字數上限時直接擋下，不做「只取最近一段」的靜默截斷 ——
@@ -34,7 +34,7 @@ function validateImages(images) {
 // ---------- anthropic.js ----------
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const REQUEST_TIMEOUT_MS = 170000; // 付費版最多要吃 30 萬字輸入＋較長的輸出，90 秒對大對話來說太趕
+const REQUEST_TIMEOUT_MS = 240000; // 付費版最多要吃 60 萬字輸入＋較長的輸出，需要更多緩衝時間
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -1226,7 +1226,7 @@ async function handleRelationship(request, env, body) {
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
-    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 12000,
+    system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 14000,
   });
   // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
   // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——
