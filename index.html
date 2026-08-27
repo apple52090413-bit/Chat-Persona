@@ -1761,6 +1761,11 @@
   const loadingMessages = ['正在洗牌，讀取你的言語頻率...','正在計算已讀速度與句尾語氣...','正在比對用字習慣與情緒溫度...','快好了，牌卡正在成形...'];
   const loadingMessagesPaid = ['正在比對你們兩人的對話節奏...','正在計算溫度與主導權分布...','正在交叉分析關係模式...','快整理好幾個想確認的問題了...'];
   const loadingMessagesFinal = ['正在根據你的回答重新校準分析...','正在整合你補充的重要時刻...','正在生成完整關係報告...'];
+  // 對話內容比較長的時候，AI 光是讀完＋寫完分析可能要一兩分鐘，上面那幾句
+  // 跑完之後（3-4 秒）如果 API 還沒回來，就改成慢慢循環這幾句＋進度條繼續
+  // 緩慢往前爬，而不是整個畫面卡在同一句話不動，讓人以為當機了。
+  const loadingMessagesLongWait = ['內容比較多，AI 需要多一點時間仔細讀完...','還在分析中，對話越長分析越花時間，這是正常的...','快好了，比較複雜的部分正在整理...','再一下下，報告正在收尾...'];
+  let beforeUnloadHandler = null;
   async function runLoading(){
     const textEl = document.getElementById('loadingText');
     const subEl = document.getElementById('loadingSub');
@@ -1772,19 +1777,43 @@
     if(paidMode) messages = (loadingPhase==='final') ? loadingMessagesFinal : loadingMessagesPaid;
     let step = 0; fill.style.width='6%'; textEl.textContent = messages[0];
     const total = messages.length;
-    // 這段動畫只是視覺安撫效果，真正的分析結果要等下面 API 呼叫回來才會顯示。
+    const startedAt = Date.now();
+
+    // 分析進行中如果使用者想關掉分頁或重新整理，跳出瀏覽器內建的確認視窗——
+    // 避免因為畫面看起來卡住而誤觸重新整理，導致整個分析要重跑（而且已經
+    // 花掉的 API 費用也白花了）。分析結束（不管成功或失敗）就會拿掉這個提醒。
+    if(beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler);
+    beforeUnloadHandler = (e)=>{ e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+
+    let longWaitStep = 0;
     const cycle = setInterval(()=>{
-      step = Math.min(step+1, total-1);
-      fill.style.width = Math.min(92,6+(step/(total-1))*86)+'%';
-      textEl.textContent = messages[step];
+      if(step < total-1){
+        step++;
+        fill.style.width = Math.min(92,6+(step/(total-1))*86)+'%';
+        textEl.textContent = messages[step];
+      } else {
+        const w = parseFloat(fill.style.width) || 92;
+        fill.style.width = Math.min(97, w+0.6)+'%';
+        textEl.textContent = loadingMessagesLongWait[longWaitStep % loadingMessagesLongWait.length];
+        longWaitStep++;
+      }
+      if(Date.now() - startedAt > 12000){
+        subEl.textContent = '內容比較多的話，分析可能需要 1-2 分鐘，請耐心等候，不要關閉或重新整理頁面';
+      }
     }, 900);
+    function stopLoadingGuards(){
+      clearInterval(cycle);
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
+      beforeUnloadHandler = null;
+    }
 
     try{
       if(!paidMode){
         const images = await collectImagePayload();
         const result = await callApi('/analyze-persona', { text: uploadedChatText, images });
         lastPersonaResult = validatePersonaResult(result);
-        clearInterval(cycle);
+        stopLoadingGuards();
         fill.style.width = '100%';
         setTimeout(()=>{ goTo('reveal'); prepareCard(); }, 300);
       } else if(loadingPhase==='initial'){
@@ -1796,18 +1825,18 @@
           milestones: userMilestones,
         });
         lastRelationshipDraft = validateRelationshipResult(result);
-        clearInterval(cycle);
+        stopLoadingGuards();
         fill.style.width = '100%';
         setTimeout(()=>{ prepareAiQuestions(); goTo('aiAsk'); }, 300);
       } else {
         const refined = await callApi('/refine-relationship', { draft: lastRelationshipDraft, answers: aiAnswers });
         lastRelationshipDraft = Object.assign({}, lastRelationshipDraft, refined);
-        clearInterval(cycle);
+        stopLoadingGuards();
         fill.style.width = '100%';
         setTimeout(()=>{ goTo('relResult'); prepareRelationshipResult(); }, 300);
       }
     } catch(err){
-      clearInterval(cycle);
+      stopLoadingGuards();
       document.getElementById('loadingErrorText').textContent = (err && err.message) || '分析失敗，請稍後再試一次。';
       errEl.classList.add('show');
     }
