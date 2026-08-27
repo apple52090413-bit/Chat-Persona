@@ -938,7 +938,7 @@
         <p>Chat Persona 提供兩種服務：</p>
         <ul>
           <li><b>免費版</b>：分析單人聊天風格，最多可分析 80,000 字對話內容，包含人格類型、核心指標與高頻字詞。完全免費，不需付費、不需註冊帳號。</li>
-          <li><b>付費版「雙人關係深度報告」</b>：NT$99（一次性付費，非訂閱制），最多可分析 600,000 字雙人對話，內容包含雙方個性側寫、化學反應分數、衝突與互動指標分析、關係大事記時間軸（可針對事件追問 AI）、PDF 報告匯出。</li>
+          <li><b>付費版「雙人關係深度報告」</b>：NT$99（一次性付費，非訂閱制），最多可分析 600,000 字雙人對話，內容包含雙方個性側寫、化學反應分數、衝突與互動指標分析、關係大事記時間軸（可針對事件追問 AI）、報告圖片匯出。</li>
         </ul>
         <p>本服務沒有會員帳號機制，每次分析都是獨立的單次服務，不會自動續扣款，也沒有除了上述之外的隱藏費用。</p>
       </div>
@@ -967,7 +967,7 @@
       <div class="policy-section">
         <h3>退換貨與退款政策</h3>
         <p>「雙人關係深度報告」為虛擬數位內容服務，付款完成、AI 開始生成報告後即視為服務已提供完成。依「通訊交易解除權合理例外情事適用準則」第2條第7款規定，非以有形媒介提供之數位內容或一經提供即完成之線上服務，經消費者事前同意後，不適用《消費者保護法》第19條之七日猶豫期（鑑賞期）規定。因此完成付款並開始生成報告後，恕不接受退費、退貨。</p>
-        <p><b>報告保存方式：</b>本服務無帳號機制，報告產生後僅顯示於當次瀏覽的分頁中，不會保存在伺服器上。請務必在報告產生後立即點選「下載 PDF」保存至你的裝置；離開頁面或重新整理頁面後將無法再次查看，屬服務性質使然，恕無法以「忘記下載」為由申請補發或退費。</p>
+        <p><b>報告保存方式：</b>本服務無帳號機制，報告產生後僅顯示於當次瀏覽的分頁中，不會保存在伺服器上。請務必在報告產生後立即點選「下載圖片」保存至你的裝置；離開頁面或重新整理頁面後將無法再次查看，屬服務性質使然，恕無法以「忘記下載」為由申請補發或退費。</p>
         <p>若因系統技術問題導致無法正常產出報告，請透過下方客服信箱與我們聯繫，我們會協助處理。</p>
       </div>
 
@@ -1105,7 +1105,7 @@
 
     <div class="redirect-note">
       <span class="redirect-icon">📄</span>
-      <p><b>報告保存須知：</b>本服務無帳號機制，報告只會顯示在當次瀏覽的分頁中，<b>不會保存在伺服器上</b>。請在報告產生後點選「下載 PDF」保存到你的裝置，離開頁面或重新整理後將無法再次查看。</p>
+      <p><b>報告保存須知：</b>本服務無帳號機制，報告只會顯示在當次瀏覽的分頁中，<b>不會保存在伺服器上</b>。請在報告產生後點選「下載圖片」保存到你的裝置，離開頁面或重新整理後將無法再次查看。</p>
     </div>
 
     <label class="consent-item" style="margin-top:10px;">
@@ -1297,11 +1297,11 @@
       </div>
       </div>
 
-      <div class="limit-warning show" id="relReportSaveReminder">⚠ 這份報告沒有存在伺服器上，只會顯示在這個分頁裡——<b>離開或重新整理頁面後就無法再次查看</b>，請務必先按下面「下載 PDF」保存起來。</div>
-      <div class="save-confirm-note" id="relReportSavedNote">✓ 已下載 PDF，這份報告你已經保存起來了。</div>
+      <div class="limit-warning show" id="relReportSaveReminder">⚠ 這份報告沒有存在伺服器上，只會顯示在這個分頁裡——<b>離開或重新整理頁面後就無法再次查看</b>，請務必先按下面「下載圖片」保存起來。</div>
+      <div class="save-confirm-note" id="relReportSavedNote">✓ 已下載圖片，這份報告你已經保存起來了。</div>
 
       <div class="rel-btn-row">
-        <button class="btn btn-ghost" id="downloadPdfBtn" onclick="downloadRelationshipPdf(this)">下載 PDF</button>
+        <button class="btn btn-ghost" id="downloadPdfBtn" onclick="downloadRelationshipPdf(this)">下載圖片</button>
         <button class="btn btn-ghost" onclick="openShareCard('paid')">分享報告</button>
       </div>
       <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="restart()">重新分析一次</button>
@@ -1361,7 +1361,7 @@
             <li>雙人關係深度報告（溫度／主導權／有沒有戲）</li>
             <li>完整對話歷史分析，最長可追蹤 1 年關係趨勢（免費版僅近 3 個月）</li>
             <li>個人溝通盲點與優勢完整解析</li>
-            <li>完整 PDF 匯出下載</li>
+            <li>完整報告圖片匯出下載</li>
           </ul>
         </div>
       </div>
@@ -1572,30 +1572,28 @@
     }).join('');
   }
 
-  // ---------- PDF 匯出（付費版報告）----------
-  // 這個網站沒有後端算圖服務，PDF 是在使用者瀏覽器裡當場產生的：先把報告
-  // 區塊拍成一張長截圖（html2canvas），再把截圖切成好幾頁貼進 PDF（jsPDF）。
-  // 兩個套件平常用不到，所以不在網頁載入時就載入，而是使用者真的按下
-  // 「下載 PDF」才去外部載入，載過一次後同一個瀏覽器分頁裡不會重複載入。
-  let pdfLibsPromise = null;
+  // ---------- 圖片匯出（付費版報告）----------
+  // 這個網站沒有後端算圖服務，圖片是在使用者瀏覽器裡當場產生的：把報告
+  // 區塊拍成一張長截圖（html2canvas）直接存成 PNG。存成一張完整的長圖，
+  // 不分頁，就不會有任何卡片/圖表/段落被硬生生切成兩半的問題。
+  // html2canvas 平常用不到，所以不在網頁載入時就載入，而是使用者真的按下
+  // 「下載圖片」才去外部載入，載過一次後同一個瀏覽器分頁裡不會重複載入。
+  let captureLibPromise = null;
   function loadScriptOnce(src){
     return new Promise((resolve, reject)=>{
       if(document.querySelector('script[src="'+src+'"]')){ resolve(); return; }
       const s = document.createElement('script');
       s.src = src;
       s.onload = ()=> resolve();
-      s.onerror = ()=> reject(new Error('無法載入 PDF 產生工具，請確認網路連線後再試一次'));
+      s.onerror = ()=> reject(new Error('無法載入圖片產生工具，請確認網路連線後再試一次'));
       document.head.appendChild(s);
     });
   }
-  function ensurePdfLibs(){
-    if(!pdfLibsPromise){
-      pdfLibsPromise = Promise.all([
-        loadScriptOnce('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'),
-        loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js'),
-      ]);
+  function ensureCaptureLib(){
+    if(!captureLibPromise){
+      captureLibPromise = loadScriptOnce('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js');
     }
-    return pdfLibsPromise;
+    return captureLibPromise;
   }
 
   async function downloadRelationshipPdf(btn){
@@ -1603,72 +1601,29 @@
     btn.disabled = true;
     btn.textContent = '產生中...';
     try{
-      await ensurePdfLibs();
+      await ensureCaptureLib();
       const target = document.getElementById('relReportCapture');
       const canvas = await html2canvas(target, {
         scale: 2,
         backgroundColor: '#fdfbf8',
         useCORS: true,
       });
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const pxPerMm = canvas.width / imgWidth;
-      const pageHeightPx = pageHeight * pxPerMm;
-
-      // A plain fixed-height slice cuts page breaks straight through
-      // cards/charts/paragraphs wherever they happen to fall. Instead,
-      // find the safe gaps between top-level report sections (pairing
-      // each ".block-label" with the content right after it, so a title
-      // never gets separated from its content) and only break there.
-      const targetRect = target.getBoundingClientRect();
-      const scaleY = canvas.height / targetRect.height;
-      const rawChildren = Array.from(target.children).filter(el => el.offsetParent !== null);
-      const blocks = [];
-      for(let i = 0; i < rawChildren.length; i++){
-        const el = rawChildren[i];
-        const r = el.getBoundingClientRect();
-        let top = (r.top - targetRect.top) * scaleY;
-        let bottom = (r.bottom - targetRect.top) * scaleY;
-        if(el.classList.contains('block-label') && rawChildren[i + 1]){
-          const nr = rawChildren[i + 1].getBoundingClientRect();
-          bottom = (nr.bottom - targetRect.top) * scaleY;
-          i++;
-        }
-        blocks.push({ top, bottom });
-      }
-      function safeBreak(y){
-        for(const b of blocks){
-          if(y > b.top + 2 && y < b.bottom - 2 && (b.bottom - b.top) < pageHeightPx) return b.top;
-        }
-        return y;
-      }
-
-      let sliceStart = 0;
-      while(sliceStart < canvas.height){
-        let sliceEnd = Math.min(sliceStart + pageHeightPx, canvas.height);
-        if(sliceEnd < canvas.height) sliceEnd = safeBreak(sliceEnd);
-        if(sliceEnd <= sliceStart) sliceEnd = Math.min(sliceStart + pageHeightPx, canvas.height);
-
-        const sliceCanvas = document.createElement('canvas');
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceEnd - sliceStart;
-        sliceCanvas.getContext('2d').drawImage(
-          canvas, 0, sliceStart, canvas.width, sliceEnd - sliceStart,
-          0, 0, canvas.width, sliceEnd - sliceStart
-        );
-        const sliceImgHeight = (sliceCanvas.height * imgWidth) / canvas.width;
-        if(sliceStart > 0) pdf.addPage();
-        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, sliceImgHeight);
-        sliceStart = sliceEnd;
-      }
 
       const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
+      const relSlug = relKeySlugs[relKey] || 'report';
       const dateStr = new Date().toISOString().slice(0,10);
-      pdf.save('雙人關係報告_'+relKey+'_'+dateStr+'.pdf');
+      // A blob: URL (rather than a data: URL) reliably keeps the filename
+      // the "download" attribute asks for across browsers.
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'chat-persona-relationship-report_'+relSlug+'_'+dateStr+'.png';
+      link.href = blobUrl;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+
       relReportSaved = true;
       updateRelReportLeaveGuard();
       const savedNote = document.getElementById('relReportSavedNote');
@@ -1676,7 +1631,7 @@
       const reminder = document.getElementById('relReportSaveReminder');
       if(reminder) reminder.classList.remove('show');
     } catch(err){
-      alert((err && err.message) || 'PDF 產生失敗，請稍後再試一次。');
+      alert((err && err.message) || '圖片產生失敗，請稍後再試一次。');
     } finally {
       btn.disabled = false;
       btn.textContent = originalLabel;
@@ -2139,10 +2094,15 @@
   }
 
   const relScoreLabels = { '曖昧':'有戲指數', '伴侶':'關係穩定度', '朋友':'友誼濃度', '家人':'情感連結度', '同事':'合作默契度' };
+  // Chromium (confirmed on current builds) silently replaces a non-ASCII
+  // <a download> filename with a generic "download" - use ASCII slugs for
+  // the saved filename so the download reliably keeps its name/extension;
+  // the report content itself stays fully in Chinese.
+  const relKeySlugs = { '曖昧':'ambiguous', '伴侶':'partner', '朋友':'friend', '家人':'family', '同事':'colleague' };
   let currentTimelineEvents = [];
 
   // ---------- 付費報告沒有存進伺服器，只存在這個分頁的記憶體裡：離開/重新整理
-  // 就整個消失、無法復原。這裡加一層保護，在使用者還沒下載 PDF 之前，
+  // 就整個消失、無法復原。這裡加一層保護，在使用者還沒下載圖片之前，
   // 離開分頁或按「重新分析一次」都會先跳出警告，避免手滑弄丟已經付費的報告。
   let relReportSaved = false;
   let relReportBeforeUnloadHandler = null;
