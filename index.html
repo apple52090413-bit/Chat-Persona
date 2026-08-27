@@ -1653,21 +1653,35 @@
   // 這裡改成：先試 UTF-8，如果解碼結果裡有太多「無法辨識」的替代字元（U+FFFD），
   // 代表編碼猜錯了，換別的編碼重試，最後選亂碼比例最低的那個結果。
   function decodeTextBestEffort(buffer){
+    // 判斷「這個解碼結果亂碼多不多」不需要真的逐字掃過幾十萬～幾百萬個字元，
+    // 抽樣（最多掃 5 萬個點）估出來的比例已經夠準，卻能讓耗時不會隨檔案變大
+    // 而跟著往上衝，避免大檔案時整個分頁卡住沒反應。
+    function estimateBadRatio(text){
+      if(!text.length) return 0;
+      const sampleSize = Math.min(text.length, 50000);
+      const step = Math.max(1, Math.floor(text.length / sampleSize));
+      let bad = 0, checked = 0;
+      for(let i=0; i<text.length; i+=step){
+        if(text.charCodeAt(i) === 0xFFFD) bad++;
+        checked++;
+      }
+      return checked ? bad/checked : 0;
+    }
     function tryDecode(enc){
       try{
         const text = new TextDecoder(enc, { fatal:false }).decode(buffer);
-        let bad = 0;
-        for(let i=0;i<text.length;i++){ if(text.charCodeAt(i)===0xFFFD) bad++; }
-        return { enc, text, ratio: text.length ? bad/text.length : 0 };
+        return { enc, text, ratio: estimateBadRatio(text) };
       } catch { return null; }
     }
     const utf8 = tryDecode('utf-8');
     if(utf8 && utf8.ratio < 0.005) return utf8; // 幾乎沒有亂碼，直接當作正確編碼
     let best = utf8;
-    ['utf-16le','utf-16be','big5','gbk'].forEach(enc=>{
+    // 找到夠好的候選就停下來，不用每種編碼都試過一輪。
+    for(const enc of ['utf-16le','utf-16be','big5','gbk']){
       const cand = tryDecode(enc);
       if(cand && (!best || cand.ratio < best.ratio)) best = cand;
-    });
+      if(best && best.ratio < 0.005) break;
+    }
     return best || { enc:'utf-8', text:'', ratio:0 };
   }
   const MAX_IMAGES = 8;
@@ -1735,7 +1749,7 @@
     if(m==='paste'){
       const limit = currentTextLimit();
       const limitLabel = limit.toLocaleString();
-      inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / '+limitLabel+' 字</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
+      inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / '+limitLabel+' 字</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
       const pasteEl = document.getElementById('pasteText');
       const counterEl = document.getElementById('charCounter');
       pasteEl.addEventListener('input', e=>{
@@ -1769,6 +1783,11 @@
           fileInput.value = '';
           return;
         }
+        nameEl.classList.remove('error');
+        nameEl.textContent = '讀取中...（'+(f.size/1024/1024).toFixed(2)+'MB）';
+        // 大檔案編碼判斷需要一點運算時間，先讓瀏覽器把「讀取中」畫出來，
+        // 使用者才不會覺得畫面卡住沒反應。
+        requestAnimationFrame(()=> requestAnimationFrame(()=>{
         f.arrayBuffer().then(buffer=>{
           const decoded = decodeTextBestEffort(buffer);
           uploadedChatText = decoded.text;
@@ -1784,6 +1803,7 @@
           nameEl.classList.add('error');
           uploadedChatText = null; hasInput = false; renderLimitWarning(); updateStartBtn();
         });
+        }));
       });
     } else if(m==='image'){
       inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realImgInput" accept="image/*" multiple style="display:none"><div class="method-icon" style="font-size:24px;">▣</div><button type="button" class="fake-upload-btn" id="fakeImgBtn">選擇截圖（最多 8 張）</button><div class="fake-filename" id="fakeImgName">尚未選擇圖片</div><div class="img-thumbs" id="imgThumbs"></div></div>';
