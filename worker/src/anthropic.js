@@ -1,6 +1,6 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const REQUEST_TIMEOUT_MS = 90000;
+const REQUEST_TIMEOUT_MS = 170000; // 付費版最多要吃 30 萬字輸入＋較長的輸出，90 秒對大對話來說太趕
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
