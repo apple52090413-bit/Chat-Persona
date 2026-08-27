@@ -1120,6 +1120,7 @@
   <section class="screen" data-screen="relResult">
     <div class="reveal-scroll">
       <p class="eyebrow">雙人關係報告</p>
+      <div id="relReportCapture">
       <p class="rel-type-badge" id="relTypeBadge"></p>
 
       <div class="chem-hero">
@@ -1177,9 +1178,10 @@
         <p class="insight-eyebrow">✦ 整體核心洞察</p>
         <p class="insight-text" id="relInsight"></p>
       </div>
+      </div>
 
       <div class="rel-btn-row">
-        <button class="btn btn-ghost" onclick="alert('原型示範：正式版這裡會匯出完整 PDF 報告')">下載 PDF</button>
+        <button class="btn btn-ghost" id="downloadPdfBtn" onclick="downloadRelationshipPdf(this)">下載 PDF</button>
         <button class="btn btn-ghost" onclick="openShareCard('paid')">分享報告</button>
       </div>
       <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="restart()">重新分析一次</button>
@@ -1448,6 +1450,74 @@
         '<span class="hist-tag paid">付費版</span>'+
       '</div>';
     }).join('');
+  }
+
+  // ---------- PDF 匯出（付費版報告）----------
+  // 這個網站沒有後端算圖服務，PDF 是在使用者瀏覽器裡當場產生的：先把報告
+  // 區塊拍成一張長截圖（html2canvas），再把截圖切成好幾頁貼進 PDF（jsPDF）。
+  // 兩個套件平常用不到，所以不在網頁載入時就載入，而是使用者真的按下
+  // 「下載 PDF」才去外部載入，載過一次後同一個瀏覽器分頁裡不會重複載入。
+  let pdfLibsPromise = null;
+  function loadScriptOnce(src){
+    return new Promise((resolve, reject)=>{
+      if(document.querySelector('script[src="'+src+'"]')){ resolve(); return; }
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = ()=> resolve();
+      s.onerror = ()=> reject(new Error('無法載入 PDF 產生工具，請確認網路連線後再試一次'));
+      document.head.appendChild(s);
+    });
+  }
+  function ensurePdfLibs(){
+    if(!pdfLibsPromise){
+      pdfLibsPromise = Promise.all([
+        loadScriptOnce('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'),
+        loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js'),
+      ]);
+    }
+    return pdfLibsPromise;
+  }
+
+  async function downloadRelationshipPdf(btn){
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '產生中...';
+    try{
+      await ensurePdfLibs();
+      const target = document.getElementById('relReportCapture');
+      const canvas = await html2canvas(target, {
+        scale: 2,
+        backgroundColor: '#fdfbf8',
+        useCORS: true,
+      });
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgData = canvas.toDataURL('image/png');
+
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while(heightLeft > 0){
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
+      const dateStr = new Date().toISOString().slice(0,10);
+      pdf.save('雙人關係報告_'+relKey+'_'+dateStr+'.pdf');
+    } catch(err){
+      alert((err && err.message) || 'PDF 產生失敗，請稍後再試一次。');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   }
 
   function openShareCard(kind){
