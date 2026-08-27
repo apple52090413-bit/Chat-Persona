@@ -377,6 +377,8 @@
     background:#f4f7fb; padding:22px 20px 24px;
   }
   .npay-topbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .npay-scroll{ overflow-y:auto; flex:1; min-height:0; scrollbar-width:none; }
+  .npay-scroll::-webkit-scrollbar{ display:none; }
   .npay-back{ background:none; border:none; color:#6b7a90; font-size:12px; cursor:pointer; padding:0; }
   .npay-ssl{ font-size:10px; color:#3a8f5c; font-weight:700; }
   .npay-logo{ display:flex; align-items:center; gap:8px; margin-bottom:18px; }
@@ -1128,6 +1130,7 @@
       <button class="npay-back" onclick="goTo('payment')">← 返回商店</button>
       <span class="npay-ssl">🔒 SSL 安全連線</span>
     </div>
+    <div class="npay-scroll">
     <div class="npay-logo">
       <span class="npay-logo-mark">N</span>
       <span class="npay-logo-text">NewebPay <span>藍新金流</span></span>
@@ -1150,6 +1153,7 @@
 
     <button class="npay-pay-btn" onclick="confirmPayment()">確認付款 NT$99</button>
     <p class="npay-footnote">本頁面模擬藍新金流付款介面，僅供原型展示，不會產生任何真實交易</p>
+    </div>
   </section>
 
 
