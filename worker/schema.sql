@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 
+-- 每次呼叫 Claude API 的用量記錄，用來追蹤實際花費。order_id 可以是 NULL
+-- （例如免費版分析目前還沒有對應的訂單）。
+CREATE TABLE IF NOT EXISTS api_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER REFERENCES orders(id),
+  endpoint TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_usage_order ON api_usage(order_id);
+CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at);
+
 -- 起始商品範例（免費 / 月繳 / 年繳），可以直接在後台編輯或刪除
 INSERT INTO products (name, price, billing_cycle, active) VALUES
   ('免費版', 0, 'one_time', 1),

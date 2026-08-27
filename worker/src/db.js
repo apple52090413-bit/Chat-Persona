@@ -150,10 +150,37 @@ export async function getDashboardStats(db) {
      LEFT JOIN products ON products.id = orders.product_id
      ORDER BY orders.id DESC LIMIT 8`
   ).all();
+  const usage = await getUsageStats(db);
   return {
     monthlyRevenue: revenueRow ? revenueRow.total : 0,
     monthlyPaidOrders: paidCountRow ? paidCountRow.n : 0,
     pendingOrders: pendingRow ? pendingRow.n : 0,
     recentOrders,
+    monthlyApiCalls: usage.monthlyApiCalls,
+    monthlyInputTokens: usage.monthlyInputTokens,
+    monthlyOutputTokens: usage.monthlyOutputTokens,
+  };
+}
+
+// ---------- API 用量記錄 ----------
+// 每一次呼叫 Claude API 都記一筆，orderId 可以是 null（例如免費版分析目前還沒有
+// 對應的訂單）。這個表只是用來看花費趨勢，不影響任何分析結果本身。
+
+export async function logApiUsage(db, { orderId, endpoint, model, inputTokens, outputTokens }) {
+  await db.prepare(
+    'INSERT INTO api_usage (order_id, endpoint, model, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?)'
+  ).bind(orderId || null, endpoint, model, inputTokens || 0, outputTokens || 0).run();
+}
+
+export async function getUsageStats(db) {
+  const monthPrefix = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(input_tokens), 0) AS input_total, COALESCE(SUM(output_tokens), 0) AS output_total
+     FROM api_usage WHERE substr(created_at, 1, 7) = ?`
+  ).bind(monthPrefix).first();
+  return {
+    monthlyApiCalls: row ? row.n : 0,
+    monthlyInputTokens: row ? row.input_total : 0,
+    monthlyOutputTokens: row ? row.output_total : 0,
   };
 }

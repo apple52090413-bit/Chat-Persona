@@ -6,15 +6,22 @@
 // ============================================================
 
 // ---------- validate.js ----------
-const MAX_TEXT_CHARS = 60000;
+const FREE_TEXT_LIMIT = 20000;
+const PAID_TEXT_LIMIT = 180000;
 const MAX_IMAGES = 8;
 
-function truncateText(text) {
-  if (!text) return '';
-  if (text.length <= MAX_TEXT_CHARS) return text;
-  // Keep the most recent part of the conversation, matching the
-  // "超過只取最近的部分" behavior described in the upload UI.
-  return text.slice(text.length - MAX_TEXT_CHARS);
+// 免費版／付費版超過字數上限時直接擋下，不做「只取最近一段」的靜默截斷 ——
+// 靜默截斷會讓使用者以為分析涵蓋了全部內容，但其實 AI 根本沒讀到前面的部分。
+function assertWithinTextLimit(text, limit) {
+  if (text && text.length > limit) {
+    const err = new Error(`內容有 ${text.length.toLocaleString()} 字，超過 ${limit.toLocaleString()} 字上限`);
+    err.status = 400;
+    err.isValidation = true;
+    err.code = 'TEXT_TOO_LONG';
+    err.charCount = text.length;
+    err.limit = limit;
+    throw err;
+  }
 }
 
 function validateImages(images) {
@@ -27,30 +34,69 @@ function validateImages(images) {
 // ---------- anthropic.js ----------
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const REQUEST_TIMEOUT_MS = 90000;
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 呼叫 Anthropic API，遇到逾時／429／5xx 會自動重試一次（等一下再試，
+// 通常就是暫時性問題）；4xx（例如請求格式錯誤）不會重試，因為重試也不會成功。
 async function postToAnthropic(apiKey, body) {
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    const err = new Error('Anthropic API error ' + res.status + ': ' + errText.slice(0, 500));
-    err.status = res.status;
-    err.isUpstream = true;
-    throw err;
+  const maxAttempts = 2;
+  let lastErr;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (res.ok) return await res.json();
+
+      const errText = await res.text().catch(() => '');
+      const err = new Error('Anthropic API error ' + res.status + ': ' + errText.slice(0, 500));
+      err.status = res.status;
+      err.isUpstream = true;
+      const retryable = res.status === 429 || res.status >= 500;
+      if (!retryable || attempt === maxAttempts - 1) throw err;
+      lastErr = err;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        lastErr = Object.assign(new Error('AI 分析逾時未回應，請稍後再試一次'), { isUpstream: true, status: 504 });
+      } else if (err.isUpstream) {
+        throw err; // 已經在上面判斷過不需要重試
+      } else {
+        lastErr = err; // fetch 本身失敗（網路層級），值得重試一次
+      }
+      if (attempt === maxAttempts - 1) throw lastErr;
+    } finally {
+      clearTimeout(timer);
+    }
+    await sleep(1200 * (attempt + 1));
   }
-  return res.json();
+  throw lastErr;
 }
 
 function isValidToolInput(input, requiredKeys) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
   return requiredKeys.every(key => input[key] !== undefined && input[key] !== null);
+}
+
+function addUsage(total, usage) {
+  if (!usage) return total;
+  return {
+    input_tokens: total.input_tokens + (usage.input_tokens || 0),
+    output_tokens: total.output_tokens + (usage.output_tokens || 0),
+  };
 }
 
 const RETRY_NUDGE = '（上一次的回覆格式不完整或把內容誤塞進單一欄位，這次請務必透過 tool use 把每一個欄位都個別正確填寫成對應的型別，不要把其他欄位的內容寫成文字塞進某一個欄位裡，也不要用 XML 或其他格式，只能用工具呼叫本身的結構化參數。）';
@@ -59,9 +105,12 @@ const RETRY_NUDGE = '（上一次的回覆格式不完整或把內容誤塞進�
 // Retries once (with a corrective nudge) if the model's tool call is missing
 // required fields or malforms the arguments — this does happen occasionally
 // with complex nested schemas, especially on very short/sparse input.
+// Returns { result, usage } — usage is accumulated across both attempts,
+// since both are billed by Anthropic even if only the second one succeeds.
 async function callClaudeTool({ apiKey, model, system, messages, tool, maxTokens }) {
   const requiredKeys = (tool.input_schema && tool.input_schema.required) || [];
   let lastToolUse = null;
+  let usage = { input_tokens: 0, output_tokens: 0 };
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const attemptMessages = attempt === 0 ? messages : appendNudge(messages, RETRY_NUDGE);
@@ -73,15 +122,18 @@ async function callClaudeTool({ apiKey, model, system, messages, tool, maxTokens
       tools: [tool],
       tool_choice: { type: 'tool', name: tool.name },
     });
+    usage = addUsage(usage, data.usage);
     const toolUse = (data.content || []).find(b => b.type === 'tool_use' && b.name === tool.name);
     if (toolUse) lastToolUse = toolUse;
     if (toolUse && isValidToolInput(toolUse.input, requiredKeys)) {
-      return toolUse.input;
+      return { result: toolUse.input, usage };
     }
   }
 
   console.error('Invalid tool_use input after retry:', JSON.stringify(lastToolUse).slice(0, 1000));
-  throw new Error('AI 回傳的分析格式不完整，請重試一次。');
+  const err = new Error('AI 回傳的分析格式不完整，請重試一次。');
+  err.usage = usage; // 兩次嘗試都算過錢了，即使失敗也要讓呼叫端能記錄花費
+  throw err;
 }
 
 function appendNudge(messages, nudge) {
@@ -94,6 +146,7 @@ function appendNudge(messages, nudge) {
 }
 
 // Plain free-text reply, used for the short follow-up chat answers.
+// Returns { result, usage }.
 async function callClaudePlain({ apiKey, model, system, messages, maxTokens }) {
   const data = await postToAnthropic(apiKey, {
     model,
@@ -102,7 +155,10 @@ async function callClaudePlain({ apiKey, model, system, messages, maxTokens }) {
     messages,
   });
   const textBlock = (data.content || []).find(b => b.type === 'text');
-  return textBlock ? textBlock.text : '';
+  return {
+    result: textBlock ? textBlock.text : '',
+    usage: data.usage || { input_tokens: 0, output_tokens: 0 },
+  };
 }
 
 // ---------- prompts.js ----------
@@ -704,11 +760,38 @@ async function getDashboardStats(db) {
      LEFT JOIN products ON products.id = orders.product_id
      ORDER BY orders.id DESC LIMIT 8`
   ).all();
+  const usage = await getUsageStats(db);
   return {
     monthlyRevenue: revenueRow ? revenueRow.total : 0,
     monthlyPaidOrders: paidCountRow ? paidCountRow.n : 0,
     pendingOrders: pendingRow ? pendingRow.n : 0,
     recentOrders,
+    monthlyApiCalls: usage.monthlyApiCalls,
+    monthlyInputTokens: usage.monthlyInputTokens,
+    monthlyOutputTokens: usage.monthlyOutputTokens,
+  };
+}
+
+// ---------- API 用量記錄 ----------
+// 每一次呼叫 Claude API 都記一筆，orderId 可以是 null（例如免費版分析目前還沒有
+// 對應的訂單）。這個表只是用來看花費趨勢，不影響任何分析結果本身。
+
+async function logApiUsage(db, { orderId, endpoint, model, inputTokens, outputTokens }) {
+  await db.prepare(
+    'INSERT INTO api_usage (order_id, endpoint, model, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?)'
+  ).bind(orderId || null, endpoint, model, inputTokens || 0, outputTokens || 0).run();
+}
+
+async function getUsageStats(db) {
+  const monthPrefix = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(input_tokens), 0) AS input_total, COALESCE(SUM(output_tokens), 0) AS output_total
+     FROM api_usage WHERE substr(created_at, 1, 7) = ?`
+  ).bind(monthPrefix).first();
+  return {
+    monthlyApiCalls: row ? row.n : 0,
+    monthlyInputTokens: row ? row.input_total : 0,
+    monthlyOutputTokens: row ? row.output_total : 0,
   };
 }
 
@@ -732,6 +815,8 @@ const db = {
   updateOrderStatus,
   markOrderPaidByOrderNo,
   getDashboardStats,
+  logApiUsage,
+  getUsageStats,
 };
 
 // ---------- adminRoutes.js ----------
@@ -953,29 +1038,64 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
+// 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
+// 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
+// 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
+async function logUsage(env, { orderId, endpoint, usage }) {
+  if (!env.DB || !usage) return;
+  try {
+    await logApiUsage(env.DB, {
+      orderId: orderId || null,
+      endpoint,
+      model: model(env),
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+    });
+  } catch (err) {
+    console.error('logApiUsage failed:', err);
+  }
+}
+
+// 呼叫 callClaudeTool，並且不管成功或失敗都記錄 token 用量
+// （AI 回傳格式不完整而重試的那幾次，Anthropic 一樣有計費）。
+async function callClaudeToolLogged(env, { endpoint, orderId, ...params }) {
+  try {
+    const { result, usage } = await callClaudeTool(params);
+    await logUsage(env, { orderId, endpoint, usage });
+    return result;
+  } catch (err) {
+    if (err.usage) await logUsage(env, { orderId, endpoint, usage: err.usage });
+    throw err;
+  }
+}
+
 // ---------- 免費/付費版聊天分析（需要 ANTHROPIC_API_KEY）----------
 
 async function handlePersona(request, env, body) {
-  const text = truncateText(body.text || '');
+  const text = (body.text || '').trim();
   const images = validateImages(body.images);
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
+  assertWithinTextLimit(text, FREE_TEXT_LIMIT);
   const messages = buildPersonaMessages({ text, images });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 2048,
   });
 }
 
 async function handleRelationship(request, env, body) {
-  const text = truncateText(body.text || '');
+  const text = (body.text || '').trim();
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
   const milestones = Array.isArray(body.milestones)
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
+  assertWithinTextLimit(text, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 4096,
   });
@@ -986,7 +1106,8 @@ async function handleRefine(request, env, body) {
   const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!draft || typeof draft !== 'object') throw badRequest('缺少原始分析結果');
   const messages = buildRefineMessages({ draft, answers });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'refine-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: REFINE_TOOL, maxTokens: 1024,
   });
@@ -997,10 +1118,11 @@ async function handleFollowup(request, env, body) {
   const question = typeof body.question === 'string' ? body.question.slice(0, 1000).trim() : '';
   if (!question) throw badRequest('請輸入問題內容');
   const messages = buildFollowupMessages({ event, question });
-  const reply = await callClaudePlain({
+  const { result: reply, usage } = await callClaudePlain({
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, maxTokens: 400,
   });
+  await logUsage(env, { endpoint: 'timeline-followup', usage });
   return { reply };
 }
 
@@ -1098,7 +1220,13 @@ export default {
     } catch (err) {
       console.error(err);
       const status = err.isValidation ? (err.status || 400) : err.isUpstream ? 502 : (err.status || 500);
-      return json({ error: err.message || 'Internal error' }, status, headers);
+      const errorBody = { error: err.message || 'Internal error' };
+      // 字數超過上限這種情況，前端需要 code/charCount/limit 才能顯示「改用付費版」
+      // 之類的引導文案，而不是只丟一個看不懂的錯誤訊息。
+      if (err.code) errorBody.code = err.code;
+      if (err.charCount !== undefined) errorBody.charCount = err.charCount;
+      if (err.limit !== undefined) errorBody.limit = err.limit;
+      return json(errorBody, status, headers);
     }
   },
 };

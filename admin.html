@@ -145,6 +145,7 @@
         <div class="stat-card"><div class="num" id="statRevenue">-</div><div class="label">本月營收 (NT$)</div></div>
         <div class="stat-card"><div class="num" id="statPaid">-</div><div class="label">本月已付款訂單</div></div>
         <div class="stat-card"><div class="num" id="statPending">-</div><div class="label">待付款訂單</div></div>
+        <div class="stat-card"><div class="num" id="statApiCost">-</div><div class="label">本月 API 花費估算 (USD)</div></div>
       </div>
       <h3 style="margin-bottom:10px;">最新訂單</h3>
       <div class="table-wrap"><table>
@@ -325,12 +326,22 @@
 
   function fmtMoney(n){ return Number(n||0).toLocaleString(); }
 
+  // claude-sonnet-5 定價：$2 / 百萬輸入 token，$10 / 百萬輸出 token。
+  // 只是抓個大概花費，不是帳單金額（實際帳單以 Anthropic 後台為準）。
+  const CLAUDE_INPUT_USD_PER_MTOK = 2;
+  const CLAUDE_OUTPUT_USD_PER_MTOK = 10;
+  function estimateApiCostUsd(inputTokens, outputTokens){
+    return (inputTokens/1e6)*CLAUDE_INPUT_USD_PER_MTOK + (outputTokens/1e6)*CLAUDE_OUTPUT_USD_PER_MTOK;
+  }
+
   async function loadDashboard(){
     try{
       const d = await api('/admin/dashboard');
       document.getElementById('statRevenue').textContent = fmtMoney(d.monthlyRevenue);
       document.getElementById('statPaid').textContent = d.monthlyPaidOrders;
       document.getElementById('statPending').textContent = d.pendingOrders;
+      const apiCost = estimateApiCostUsd(d.monthlyInputTokens||0, d.monthlyOutputTokens||0);
+      document.getElementById('statApiCost').textContent = '$'+apiCost.toFixed(2)+'（'+(d.monthlyApiCalls||0)+' 次呼叫）';
       document.getElementById('recentOrdersBody').innerHTML = (d.recentOrders||[]).map(o => `
         <tr>
           <td>${o.order_no}</td>

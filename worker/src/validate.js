@@ -1,12 +1,19 @@
-export const MAX_TEXT_CHARS = 60000;
+export const FREE_TEXT_LIMIT = 20000;
+export const PAID_TEXT_LIMIT = 180000;
 export const MAX_IMAGES = 8;
 
-export function truncateText(text) {
-  if (!text) return '';
-  if (text.length <= MAX_TEXT_CHARS) return text;
-  // Keep the most recent part of the conversation, matching the
-  // "超過只取最近的部分" behavior described in the upload UI.
-  return text.slice(text.length - MAX_TEXT_CHARS);
+// 免費版／付費版超過字數上限時直接擋下，不做「只取最近一段」的靜默截斷 ——
+// 靜默截斷會讓使用者以為分析涵蓋了全部內容，但其實 AI 根本沒讀到前面的部分。
+export function assertWithinTextLimit(text, limit) {
+  if (text && text.length > limit) {
+    const err = new Error(`內容有 ${text.length.toLocaleString()} 字，超過 ${limit.toLocaleString()} 字上限`);
+    err.status = 400;
+    err.isValidation = true;
+    err.code = 'TEXT_TOO_LONG';
+    err.charCount = text.length;
+    err.limit = limit;
+    throw err;
+  }
 }
 
 export function validateImages(images) {

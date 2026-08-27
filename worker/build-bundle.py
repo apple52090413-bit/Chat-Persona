@@ -30,7 +30,7 @@ DB_FUNCS = [
     'listCustomers', 'createCustomer', 'getCustomer', 'updateCustomer', 'deleteCustomer',
     'listProducts', 'createProduct', 'getProduct', 'updateProduct', 'deleteProduct',
     'listOrders', 'getOrder', 'getOrderByOrderNo', 'createOrder', 'updateOrderStatus',
-    'markOrderPaidByOrderNo', 'getDashboardStats',
+    'markOrderPaidByOrderNo', 'getDashboardStats', 'logApiUsage', 'getUsageStats',
 ]
 
 HEADER = """// ============================================================

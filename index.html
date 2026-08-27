@@ -284,6 +284,15 @@
     background:rgba(255,147,169,0.12); border:1px solid rgba(255,147,169,0.4); border-radius:10px; padding:9px 11px;
   }
   .age-block-msg.show{ display:block; }
+  .limit-warning{
+    display:none; margin-top:10px; font-size:11.5px; line-height:1.6; color:#b3435a;
+    background:rgba(255,147,169,0.12); border:1px solid rgba(255,147,169,0.4); border-radius:10px; padding:10px 12px;
+  }
+  .limit-warning.show{ display:block; }
+  .limit-warning .link-btn{
+    display:inline-block; margin-top:6px; background:none; border:none; padding:0;
+    color:var(--gold); font-weight:700; font-size:11.5px; cursor:pointer; text-decoration:underline;
+  }
   .milestone-input-row{ display:flex; gap:6px; width:100%; }
   .milestone-date-input{ flex:0 0 92px; min-width:0; }
   .milestone-note-input{ flex:1; min-width:0; }
@@ -891,6 +900,7 @@
       <div class="input-area" id="inputArea">
         <div class="input-hint">先選擇上面其中一種方式</div>
       </div>
+      <div class="limit-warning" id="textLimitWarning"></div>
 
       <div id="ageFieldWrap">
         <p class="field-label">你的年齡</p>
@@ -1544,11 +1554,36 @@
   let lastRelationshipDraft = null;
   const MAX_FILE_BYTES = 5 * 1024 * 1024;
   const MAX_IMAGES = 8;
+  const FREE_TEXT_LIMIT = 20000;
+  const PAID_TEXT_LIMIT = 180000;
+
+  function currentTextLimit(){ return paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT; }
+  function isOverTextLimit(){ return !!uploadedChatText && uploadedChatText.length > currentTextLimit(); }
+
+  function renderLimitWarning(){
+    const warnEl = document.getElementById('textLimitWarning');
+    if(!warnEl) return;
+    if(isOverTextLimit()){
+      const limit = currentTextLimit();
+      const len = uploadedChatText.length;
+      if(paidMode){
+        warnEl.innerHTML = '⚠ 內容有 '+len.toLocaleString()+' 字，超過付費版 '+limit.toLocaleString()+' 字上限，請縮短內容（例如只保留其中一段時期的對話）再試一次。';
+      } else {
+        warnEl.innerHTML = '⚠ 內容有 '+len.toLocaleString()+' 字，超過免費版 '+limit.toLocaleString()+' 字上限，免費版只能分析前面這一段。'+
+          '<button type="button" class="link-btn" onclick="goToPayment()">改用付費版分析完整對話 →</button>';
+      }
+      warnEl.classList.add('show');
+    } else {
+      warnEl.classList.remove('show');
+      warnEl.innerHTML = '';
+    }
+  }
 
   function resetUploadedData(){
     uploadedChatText = null;
     uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
     uploadedImages = [];
+    renderLimitWarning();
   }
   const inputArea = document.getElementById('inputArea');
   const startBtn = document.getElementById('startBtn');
@@ -1557,10 +1592,11 @@
     const consentOther = document.getElementById('consentOther').checked;
     const consentAnalyze = document.getElementById('consentAnalyze').checked;
     const consentTrain = document.getElementById('consentTrain').checked;
+    const overLimit = isOverTextLimit();
     if(paidMode){
-      startBtn.disabled = !(hasInput && consentOther && consentAnalyze);
+      startBtn.disabled = !(hasInput && consentOther && consentAnalyze) || overLimit;
     } else {
-      startBtn.disabled = !(hasInput && selectedAge && consentOther && consentAnalyze && consentTrain);
+      startBtn.disabled = !(hasInput && selectedAge && consentOther && consentAnalyze && consentTrain) || overLimit;
     }
   }
 
@@ -1580,18 +1616,21 @@
     hasInput = false; resetUploadedData(); updateStartBtn();
 
     if(m==='paste'){
-      inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" maxlength="80000" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / 80,000 字</div><div class="limit-hint">免費版分析最近 1–3 個月的對話（技術上限約 3,000 則或 15 萬字），超過只取最近的部分</div></div>';
+      const limit = currentTextLimit();
+      const limitLabel = limit.toLocaleString();
+      inputArea.innerHTML = '<div class="paste-box"><textarea id="pasteText" placeholder="貼上你的對話內容，例如：\n我：欸你睡了沒\n他：還沒 在等你訊息"></textarea><div class="char-counter" id="charCounter">0 / '+limitLabel+' 字</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
       const pasteEl = document.getElementById('pasteText');
       const counterEl = document.getElementById('charCounter');
       pasteEl.addEventListener('input', e=>{
         const len = e.target.value.length;
-        counterEl.textContent = len.toLocaleString()+' / 80,000 字';
-        counterEl.classList.toggle('near-limit', len > 72000);
+        counterEl.textContent = len.toLocaleString()+' / '+limitLabel+' 字';
+        counterEl.classList.toggle('near-limit', len > limit);
         uploadedChatText = e.target.value.trim() ? e.target.value : null;
-        hasInput = !!uploadedChatText; updateStartBtn();
+        hasInput = !!uploadedChatText; renderLimitWarning(); updateStartBtn();
       });
     } else if(m==='file'){
-      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">免費版分析最近 1–3 個月，更早的對話只有進階版看得到</div></div>';
+      const limitLabel = currentTextLimit().toLocaleString();
+      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
       const fileInput = document.getElementById('realFileInput');
       const nameEl = document.getElementById('fakeFileName');
       document.getElementById('fakeFileBtn').addEventListener('click', ()=> fileInput.click());
@@ -1618,12 +1657,12 @@
           uploadedChatText = e.target.result;
           nameEl.classList.remove('error');
           nameEl.textContent = '已選擇：'+f.name+'（'+(f.size/1024/1024).toFixed(2)+'MB，共 '+e.target.result.length.toLocaleString()+' 字）';
-          hasInput = true; updateStartBtn();
+          hasInput = true; renderLimitWarning(); updateStartBtn();
         };
         reader.onerror = ()=>{
           nameEl.textContent = '⚠ 讀取檔案失敗，請重新選擇';
           nameEl.classList.add('error');
-          uploadedChatText = null; hasInput = false; updateStartBtn();
+          uploadedChatText = null; hasInput = false; renderLimitWarning(); updateStartBtn();
         };
         reader.readAsText(f, 'UTF-8');
       });

@@ -6,7 +6,8 @@ import {
   REFINE_TOOL, buildRefineMessages,
   buildFollowupMessages,
 } from './prompts.js';
-import { truncateText, validateImages } from './validate.js';
+import { FREE_TEXT_LIMIT, PAID_TEXT_LIMIT, assertWithinTextLimit, validateImages } from './validate.js';
+import { logApiUsage } from './db.js';
 import {
   handleLogin, handleDashboard,
   handleListCustomers, handleCreateCustomer, handleUpdateCustomer, handleDeleteCustomer,
@@ -42,29 +43,64 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
+// 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
+// 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
+// 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
+async function logUsage(env, { orderId, endpoint, usage }) {
+  if (!env.DB || !usage) return;
+  try {
+    await logApiUsage(env.DB, {
+      orderId: orderId || null,
+      endpoint,
+      model: model(env),
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+    });
+  } catch (err) {
+    console.error('logApiUsage failed:', err);
+  }
+}
+
+// 呼叫 callClaudeTool，並且不管成功或失敗都記錄 token 用量
+// （AI 回傳格式不完整而重試的那幾次，Anthropic 一樣有計費）。
+async function callClaudeToolLogged(env, { endpoint, orderId, ...params }) {
+  try {
+    const { result, usage } = await callClaudeTool(params);
+    await logUsage(env, { orderId, endpoint, usage });
+    return result;
+  } catch (err) {
+    if (err.usage) await logUsage(env, { orderId, endpoint, usage: err.usage });
+    throw err;
+  }
+}
+
 // ---------- 免費/付費版聊天分析（需要 ANTHROPIC_API_KEY）----------
 
 async function handlePersona(request, env, body) {
-  const text = truncateText(body.text || '');
+  const text = (body.text || '').trim();
   const images = validateImages(body.images);
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
+  assertWithinTextLimit(text, FREE_TEXT_LIMIT);
   const messages = buildPersonaMessages({ text, images });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 2048,
   });
 }
 
 async function handleRelationship(request, env, body) {
-  const text = truncateText(body.text || '');
+  const text = (body.text || '').trim();
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
   const milestones = Array.isArray(body.milestones)
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
+  assertWithinTextLimit(text, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 4096,
   });
@@ -75,7 +111,8 @@ async function handleRefine(request, env, body) {
   const answers = Array.isArray(body.answers) ? body.answers : [];
   if (!draft || typeof draft !== 'object') throw badRequest('缺少原始分析結果');
   const messages = buildRefineMessages({ draft, answers });
-  return callClaudeTool({
+  return callClaudeToolLogged(env, {
+    endpoint: 'refine-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: REFINE_TOOL, maxTokens: 1024,
   });
@@ -86,10 +123,11 @@ async function handleFollowup(request, env, body) {
   const question = typeof body.question === 'string' ? body.question.slice(0, 1000).trim() : '';
   if (!question) throw badRequest('請輸入問題內容');
   const messages = buildFollowupMessages({ event, question });
-  const reply = await callClaudePlain({
+  const { result: reply, usage } = await callClaudePlain({
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, maxTokens: 400,
   });
+  await logUsage(env, { endpoint: 'timeline-followup', usage });
   return { reply };
 }
 
@@ -187,7 +225,13 @@ export default {
     } catch (err) {
       console.error(err);
       const status = err.isValidation ? (err.status || 400) : err.isUpstream ? 502 : (err.status || 500);
-      return json({ error: err.message || 'Internal error' }, status, headers);
+      const errorBody = { error: err.message || 'Internal error' };
+      // 字數超過上限這種情況，前端需要 code/charCount/limit 才能顯示「改用付費版」
+      // 之類的引導文案，而不是只丟一個看不懂的錯誤訊息。
+      if (err.code) errorBody.code = err.code;
+      if (err.charCount !== undefined) errorBody.charCount = err.charCount;
+      if (err.limit !== undefined) errorBody.limit = err.limit;
+      return json(errorBody, status, headers);
     }
   },
 };
