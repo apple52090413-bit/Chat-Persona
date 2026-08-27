@@ -180,6 +180,30 @@
   .parent-brand-text{ font-size:9.5px; letter-spacing:.16em; color:var(--ink-dim); font-weight:700; }
   .parent-brand-img{ height:14px; object-fit:contain; }
 
+  .site-footer{
+    margin-top:26px; padding-top:16px; border-top:1px solid var(--line);
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px 10px;
+  }
+  .footer-link{
+    background:none; border:none; padding:0; font-size:10.5px; color:var(--ink-dim);
+    text-decoration:underline; cursor:pointer; font-family:inherit;
+  }
+  .footer-sep{ font-size:10.5px; color:var(--ink-dim); }
+  .footer-copyright{ width:100%; text-align:center; font-size:9.5px; color:var(--ink-dim); margin-top:6px; }
+
+  .policy-section{ margin-bottom:22px; }
+  .policy-section h3{
+    font-family:"Noto Serif TC",serif; font-size:14px; color:var(--ink); margin:0 0 8px;
+  }
+  .policy-section p, .policy-section li{ font-size:12px; color:var(--ink-soft); line-height:1.75; }
+  .policy-section ul{ margin:6px 0; padding-left:18px; }
+  .policy-section p + p{ margin-top:8px; }
+  .policy-contact{
+    background:var(--panel-soft); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; font-size:12px; color:var(--ink-soft);
+  }
+  .policy-contact a{ color:var(--gold); font-weight:700; text-decoration:none; }
+
   .types-section{
     margin-top:30px; padding-top:24px; border-top:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; text-align:center;
@@ -866,6 +890,13 @@
       <div class="types-dots" id="typesDots"></div>
       <button class="btn btn-primary btn-full" onclick="goTo('upload')">找出我是哪一種 →</button>
     </div>
+
+    <div class="site-footer">
+      <button class="footer-link" onclick="goTo('policies')">服務條款與隱私權政策</button>
+      <span class="footer-sep">·</span>
+      <a class="footer-link" href="mailto:chatpersonalab.service@gmail.com">聯絡客服</a>
+      <p class="footer-copyright">© Chat Persona Chat Lab</p>
+    </div>
    </div>
   </section>
 
@@ -876,6 +907,61 @@
     <h2 class="section-title">分析紀錄</h2>
     <p class="history-note">紀錄只存在這次瀏覽中，重新整理頁面就會清空——正式版會存進你的帳號，永久保留。</p>
     <div class="history-list" id="historyList"></div>
+  </section>
+
+  <!-- SCREEN: POLICIES（服務條款／隱私權／退換貨／客服，藍新金流審核要求揭露的項目）-->
+  <section class="screen" data-screen="policies">
+    <button class="back-btn" onclick="goTo('landing')">← 返回</button>
+    <div class="upload-scroll">
+      <p class="eyebrow">POLICIES</p>
+      <h2 class="section-title">服務條款與相關政策</h2>
+
+      <div class="policy-section">
+        <h3>服務說明與收費方式</h3>
+        <p>Chat Persona 提供兩種服務：</p>
+        <ul>
+          <li><b>免費版</b>：分析單人聊天風格，最多可分析 80,000 字對話內容，包含人格類型、核心指標與高頻字詞。完全免費，不需付費、不需註冊帳號。</li>
+          <li><b>付費版「雙人關係深度報告」</b>：NT$99（一次性付費，非訂閱制），最多可分析 600,000 字雙人對話，內容包含雙方個性側寫、化學反應分數、衝突與互動指標分析、關係大事記時間軸（可針對事件追問 AI）、PDF 報告匯出。</li>
+        </ul>
+        <p>本服務沒有會員帳號機制，每次分析都是獨立的單次服務，不會自動續扣款，也沒有除了上述之外的隱藏費用。</p>
+      </div>
+
+      <div class="policy-section">
+        <h3>隱私權政策</h3>
+        <ul>
+          <li>你上傳的聊天紀錄僅用於當次 AI 分析。分析過程中，AI 會將對話裡可指認身份的真實姓名、暱稱統一以「你」／「對方」代稱處理（去識別化），分析結果不會還原真實姓名。</li>
+          <li>本服務沒有使用者帳號系統，分析結果只暫存在你當次瀏覽器畫面中，重新整理頁面即會清空；我們不會把你的對話原文保存進伺服器資料庫。</li>
+          <li>免費版須經你勾選同意，才會將去識別化後的分析結果用於改善服務與模型調校；不同意則無法使用免費版。付費版不會將你的對話內容用於訓練或其他用途。</li>
+          <li>我們不會將你的對話內容公開、轉售，或分享給無關第三方。</li>
+          <li>付款交易由第三方支付服務商「藍新金流（NewebPay）」處理，我們不會接觸、記錄或儲存你的信用卡卡號等付款資訊。</li>
+        </ul>
+      </div>
+
+      <div class="policy-section">
+        <h3>服務條款</h3>
+        <ul>
+          <li>本服務僅提供 18 歲以上使用者使用。</li>
+          <li>使用本服務即表示你已取得對話中另一方的同意，僅將分析結果用於自我探索、娛樂參考，不得用於跟蹤、騷擾、蒐證、威脅或其他不法用途；若有違反，須自行負擔相關法律責任，本服務不負連帶責任。</li>
+          <li>AI 分析結果為系統依對話內容自動產生的參考性內容，僅供娛樂與自我覺察參考，不構成心理諮商、法律或任何專業建議。</li>
+          <li>本服務目前無帳號機制，不提供資料長期保存或跨裝置同步功能。</li>
+        </ul>
+      </div>
+
+      <div class="policy-section">
+        <h3>退換貨與退款政策</h3>
+        <p>「雙人關係深度報告」為虛擬數位內容服務，付款完成、AI 開始生成報告後即視為服務已提供完成。依「通訊交易解除權合理例外情事適用準則」第2條第7款規定，非以有形媒介提供之數位內容或一經提供即完成之線上服務，經消費者事前同意後，不適用《消費者保護法》第19條之七日猶豫期（鑑賞期）規定。因此完成付款並開始生成報告後，恕不接受退費、退貨。</p>
+        <p>若因系統技術問題導致無法正常產出報告，請透過下方客服信箱與我們聯繫，我們會協助處理。</p>
+      </div>
+
+      <div class="policy-section">
+        <h3>客服聯絡資訊</h3>
+        <div class="policy-contact">
+          如有任何問題，歡迎透過 Email 與我們聯繫：<br/>
+          <a href="mailto:chatpersonalab.service@gmail.com">chatpersonalab.service@gmail.com</a><br/>
+          我們會盡快回覆你的問題。
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- SCREEN 2: UPLOAD -->
@@ -1005,7 +1091,11 @@
 
     <div class="upload-bottom">
       <button class="btn btn-primary btn-full" id="goToNpayBtn" disabled onclick="goTo('npay')">前往藍新金流付款 →</button>
-      <p class="privacy-note">🔒 原型示範，不會有任何真實金流或扣款</p>
+      <div class="site-footer">
+        <button class="footer-link" onclick="goTo('policies')">服務條款與隱私權政策</button>
+        <span class="footer-sep">·</span>
+        <a class="footer-link" href="mailto:chatpersonalab.service@gmail.com">聯絡客服</a>
+      </div>
     </div>
   </section>
 
@@ -1317,7 +1407,7 @@
   document.getElementById('parentBrandTag').innerHTML = parentBrandMarkup();
 
   // ---------- 畫面切換 ----------
-  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 藍新金流收銀台', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
+  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', policies:'畫面 · 服務條款與政策', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 藍新金流收銀台', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
   function goTo(name){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.querySelector('[data-screen="'+name+'"]').classList.add('active');
