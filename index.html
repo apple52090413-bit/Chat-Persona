@@ -1565,6 +1565,29 @@
   let lastPersonaResult = null;
   let lastRelationshipDraft = null;
   const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+  // 有些聊天紀錄匯出檔不是 UTF-8（例如 Windows 記事本存的 txt 常常是 UTF-16），
+  // 硬用 UTF-8 解碼會把每個字都拆成亂碼，字數也會因此暴增到不合理的程度。
+  // 這裡改成：先試 UTF-8，如果解碼結果裡有太多「無法辨識」的替代字元（U+FFFD），
+  // 代表編碼猜錯了，換別的編碼重試，最後選亂碼比例最低的那個結果。
+  function decodeTextBestEffort(buffer){
+    function tryDecode(enc){
+      try{
+        const text = new TextDecoder(enc, { fatal:false }).decode(buffer);
+        let bad = 0;
+        for(let i=0;i<text.length;i++){ if(text.charCodeAt(i)===0xFFFD) bad++; }
+        return { enc, text, ratio: text.length ? bad/text.length : 0 };
+      } catch { return null; }
+    }
+    const utf8 = tryDecode('utf-8');
+    if(utf8 && utf8.ratio < 0.005) return utf8; // 幾乎沒有亂碼，直接當作正確編碼
+    let best = utf8;
+    ['utf-16le','utf-16be','big5','gbk'].forEach(enc=>{
+      const cand = tryDecode(enc);
+      if(cand && (!best || cand.ratio < best.ratio)) best = cand;
+    });
+    return best || { enc:'utf-8', text:'', ratio:0 };
+  }
   const MAX_IMAGES = 8;
   const FREE_TEXT_LIMIT = 20000;
   const PAID_TEXT_LIMIT = 180000;
@@ -1664,19 +1687,21 @@
           fileInput.value = '';
           return;
         }
-        const reader = new FileReader();
-        reader.onload = e=>{
-          uploadedChatText = e.target.result;
+        f.arrayBuffer().then(buffer=>{
+          const decoded = decodeTextBestEffort(buffer);
+          uploadedChatText = decoded.text;
           nameEl.classList.remove('error');
-          nameEl.textContent = '已選擇：'+f.name+'（'+(f.size/1024/1024).toFixed(2)+'MB，共 '+e.target.result.length.toLocaleString()+' 字）';
+          nameEl.textContent = '已選擇：'+f.name+'（'+(f.size/1024/1024).toFixed(2)+'MB，共 '+decoded.text.length.toLocaleString()+' 字'+(decoded.enc!=='utf-8' ? '，偵測到編碼為 '+decoded.enc : '')+'）';
+          if(decoded.ratio > 0.01){
+            nameEl.textContent += '　⚠ 內容可能有亂碼，建議改用「貼上文字」方式貼上對話內容';
+            nameEl.classList.add('error');
+          }
           hasInput = true; renderLimitWarning(); updateStartBtn();
-        };
-        reader.onerror = ()=>{
+        }).catch(()=>{
           nameEl.textContent = '⚠ 讀取檔案失敗，請重新選擇';
           nameEl.classList.add('error');
           uploadedChatText = null; hasInput = false; renderLimitWarning(); updateStartBtn();
-        };
-        reader.readAsText(f, 'UTF-8');
+        });
       });
     } else if(m==='image'){
       inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realImgInput" accept="image/*" multiple style="display:none"><div class="method-icon" style="font-size:24px;">▣</div><button type="button" class="fake-upload-btn" id="fakeImgBtn">選擇截圖（最多 8 張）</button><div class="fake-filename" id="fakeImgName">尚未選擇圖片</div><div class="img-thumbs" id="imgThumbs"></div></div>';
