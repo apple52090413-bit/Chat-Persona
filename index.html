@@ -325,6 +325,11 @@
     display:inline-block; margin-top:6px; background:none; border:none; padding:0;
     color:var(--gold); font-weight:700; font-size:11.5px; cursor:pointer; text-decoration:underline;
   }
+  .save-confirm-note{
+    display:none; margin-top:10px; font-size:11.5px; line-height:1.6; color:#2f8c6f;
+    background:rgba(143,201,160,0.14); border:1px solid rgba(143,201,160,0.45); border-radius:10px; padding:10px 12px;
+  }
+  .save-confirm-note.show{ display:block; }
   .milestone-input-row{ display:flex; gap:6px; width:100%; }
   .milestone-date-input{ flex:0 0 92px; min-width:0; }
   .milestone-note-input{ flex:1; min-width:0; }
@@ -958,6 +963,7 @@
       <div class="policy-section">
         <h3>退換貨與退款政策</h3>
         <p>「雙人關係深度報告」為虛擬數位內容服務，付款完成、AI 開始生成報告後即視為服務已提供完成。依「通訊交易解除權合理例外情事適用準則」第2條第7款規定，非以有形媒介提供之數位內容或一經提供即完成之線上服務，經消費者事前同意後，不適用《消費者保護法》第19條之七日猶豫期（鑑賞期）規定。因此完成付款並開始生成報告後，恕不接受退費、退貨。</p>
+        <p><b>報告保存方式：</b>本服務無帳號機制，報告產生後僅顯示於當次瀏覽的分頁中，不會保存在伺服器上。請務必在報告產生後立即點選「下載 PDF」保存至你的裝置；離開頁面或重新整理頁面後將無法再次查看，屬服務性質使然，恕無法以「忘記下載」為由申請補發或退費。</p>
         <p>若因系統技術問題導致無法正常產出報告，請透過下方客服信箱與我們聯繫，我們會協助處理。</p>
       </div>
 
@@ -1090,6 +1096,11 @@
     <div class="redirect-note">
       <span class="redirect-icon">⚠️</span>
       <p><b>退款須知：</b>本商品為「雙人關係深度報告」數位服務，付款完成、AI 開始生成報告後即視為服務已提供完成。依「通訊交易解除權合理例外情事適用準則」第2條第7款規定，非以有形媒介提供之數位內容或一經提供即完成之線上服務，經消費者事前同意後，不適用《消費者保護法》第19條之七日猶豫期（鑑賞期）規定，恕不接受退費、退貨。</p>
+    </div>
+
+    <div class="redirect-note">
+      <span class="redirect-icon">📄</span>
+      <p><b>報告保存須知：</b>本服務無帳號機制，報告只會顯示在當次瀏覽的分頁中，<b>不會保存在伺服器上</b>。請在報告產生後點選「下載 PDF」保存到你的裝置，離開頁面或重新整理後將無法再次查看。</p>
     </div>
 
     <label class="consent-item" style="margin-top:10px;">
@@ -1277,6 +1288,9 @@
         <p class="insight-text" id="relInsight"></p>
       </div>
       </div>
+
+      <div class="limit-warning show" id="relReportSaveReminder">⚠ 這份報告沒有存在伺服器上，只會顯示在這個分頁裡——<b>離開或重新整理頁面後就無法再次查看</b>，請務必先按下面「下載 PDF」保存起來。</div>
+      <div class="save-confirm-note" id="relReportSavedNote">✓ 已下載 PDF，這份報告你已經保存起來了。</div>
 
       <div class="rel-btn-row">
         <button class="btn btn-ghost" id="downloadPdfBtn" onclick="downloadRelationshipPdf(this)">下載 PDF</button>
@@ -1610,6 +1624,12 @@
       const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
       const dateStr = new Date().toISOString().slice(0,10);
       pdf.save('雙人關係報告_'+relKey+'_'+dateStr+'.pdf');
+      relReportSaved = true;
+      updateRelReportLeaveGuard();
+      const savedNote = document.getElementById('relReportSavedNote');
+      if(savedNote) savedNote.classList.add('show');
+      const reminder = document.getElementById('relReportSaveReminder');
+      if(reminder) reminder.classList.remove('show');
     } catch(err){
       alert((err && err.message) || 'PDF 產生失敗，請稍後再試一次。');
     } finally {
@@ -2076,9 +2096,31 @@
   const relScoreLabels = { '曖昧':'有戲指數', '伴侶':'關係穩定度', '朋友':'友誼濃度', '家人':'情感連結度', '同事':'合作默契度' };
   let currentTimelineEvents = [];
 
+  // ---------- 付費報告沒有存進伺服器，只存在這個分頁的記憶體裡：離開/重新整理
+  // 就整個消失、無法復原。這裡加一層保護，在使用者還沒下載 PDF 之前，
+  // 離開分頁或按「重新分析一次」都會先跳出警告，避免手滑弄丟已經付費的報告。
+  let relReportSaved = false;
+  let relReportBeforeUnloadHandler = null;
+  function updateRelReportLeaveGuard(){
+    if(relReportBeforeUnloadHandler){
+      window.removeEventListener('beforeunload', relReportBeforeUnloadHandler);
+      relReportBeforeUnloadHandler = null;
+    }
+    if(!relReportSaved){
+      relReportBeforeUnloadHandler = (e)=>{ e.preventDefault(); e.returnValue=''; };
+      window.addEventListener('beforeunload', relReportBeforeUnloadHandler);
+    }
+  }
+
   function prepareRelationshipResult(){
     const d = lastRelationshipDraft;
     if(!d) return;
+    relReportSaved = false;
+    updateRelReportLeaveGuard();
+    const savedNote0 = document.getElementById('relReportSavedNote');
+    if(savedNote0) savedNote0.classList.remove('show');
+    const reminder0 = document.getElementById('relReportSaveReminder');
+    if(reminder0) reminder0.classList.add('show');
     const relKey = (selectedRelationship && relScoreLabels[selectedRelationship]) ? selectedRelationship : '曖昧';
     const scoreLabel = relScoreLabels[relKey];
     document.getElementById('relTypeBadge').textContent = '關係類型：'+relKey;
@@ -2479,6 +2521,14 @@
   }
 
   function restart(){
+    const onUnsavedReport = document.querySelector('[data-screen="relResult"]').classList.contains('active')
+      && lastRelationshipDraft && !relReportSaved;
+    if(onUnsavedReport && !confirm('你還沒下載這份報告，離開後將無法再次查看，確定要重新開始嗎？')){
+      return;
+    }
+    lastRelationshipDraft = null;
+    relReportSaved = true; // 已經確認要離開了，不用再攔一次瀏覽器層級的提醒
+    updateRelReportLeaveGuard();
     if(paidMode) exitPaidUploadMode();
     selectedMethod = null; hasInput = false; selectedAge = null; resetUploadedData();
     lastPersonaResult = null;
