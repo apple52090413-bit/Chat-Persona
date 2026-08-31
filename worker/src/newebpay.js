@@ -121,10 +121,20 @@ export async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeI
   // （例如全部補 0），解成文字後把結尾這些看不見的控制字元清掉再切割欄位。
   let decrypted = new TextDecoder().decode(decryptedBuf);
   if (usedTolerant) decrypted = decrypted.replace(/[\x00-\x1f]+$/, '');
-  const result = {};
-  for (const pair of decrypted.split('&')) {
-    const [k, v] = pair.split('=');
-    if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
+
+  // 解密後的內容格式跟 RespondType 有關：'String' 是 key=value&key=value，
+  // 'JSON' 是 {"Status":...,"Message":...,"Result":{...實際交易欄位...}}。
+  // 這裡兩種都接受，優先當 JSON 解析，失敗才當 key=value 字串解析。
+  let result;
+  try {
+    const parsed = JSON.parse(decrypted);
+    result = { Status: parsed.Status, Message: parsed.Message, ...(parsed.Result || {}) };
+  } catch {
+    result = {};
+    for (const pair of decrypted.split('&')) {
+      const [k, v] = pair.split('=');
+      if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
+    }
   }
   if (usedTolerant) console.log('[newebpay] decrypted via tolerant (non-PKCS7) fallback:', JSON.stringify(result));
   return { result, reason: null, rawDecrypted: decrypted };
