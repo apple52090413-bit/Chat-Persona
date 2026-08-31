@@ -25,10 +25,26 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      # actions/upload-pages-artifact silently drops every dot-prefixed path
+      # (it tars with --exclude=".[^/]*"), which strips .well-known - needed
+      # for domain-verification files like NewebPay's Apple Pay association
+      # file. Build the artifact tarball ourselves (same tar flags the action
+      # itself uses) so dotfiles survive, still excluding .git/.github.
+      - name: Build Pages artifact (including dotfiles)
+        run: |
+          tar \
+            --dereference --hard-dereference \
+            --directory . \
+            --exclude=.git \
+            --exclude=.github \
+            -cvf "$RUNNER_TEMP/artifact.tar" \
+            .
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          path: '.'
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
