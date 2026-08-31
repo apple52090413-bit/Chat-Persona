@@ -24,12 +24,13 @@ ORDER = [
     'newebpay.js',
     'db.js',
     'adminRoutes.js',
+    'payRoutes.js',
     'index.js',
 ]
 
 DB_FUNCS = [
     'listCustomers', 'createCustomer', 'getCustomer', 'updateCustomer', 'deleteCustomer',
-    'listProducts', 'createProduct', 'getProduct', 'updateProduct', 'deleteProduct',
+    'listProducts', 'createProduct', 'getProduct', 'updateProduct', 'deleteProduct', 'getProductByName',
     'listOrders', 'getOrder', 'getOrderByOrderNo', 'createOrder', 'updateOrderStatus',
     'markOrderPaidByOrderNo', 'getDashboardStats', 'logApiUsage', 'getUsageStats',
 ]

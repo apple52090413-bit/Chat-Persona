@@ -15,21 +15,24 @@ const PAID_REPORT_PRODUCT_NAME = '雙人關係報告（單次）';
 // 付款完成後，藍新的 Return URL 會把瀏覽器導回這裡（不是導回 Worker 本身）。
 const SITE_URL = 'https://chatpersonachatlab.com';
 
-function badRequest(message) {
+// 名稱刻意加 pay 前綴，避免跟 index.js 的 badRequest()、adminRoutes.js 的
+// requireDb() 撞名 —— worker/build-bundle.py 會把所有檔案攤平合併成一個
+// 檔案給 Cloudflare 網頁編輯器貼上，撞名會變成同一個作用域裡的重複宣告。
+function payBadRequest(message) {
   const err = new Error(message);
   err.status = 400;
   err.isValidation = true;
   return err;
 }
 
-function notFound(message) {
+function payNotFound(message) {
   const err = new Error(message);
   err.status = 404;
   err.isValidation = true;
   return err;
 }
 
-function requireDb(env) {
+function payRequireDb(env) {
   if (!env.DB) {
     const err = new Error('Server not configured: missing DB (D1) binding');
     err.status = 500;
@@ -46,7 +49,7 @@ export async function handleCreatePublicOrder(request, env) {
     err.isValidation = true;
     throw err;
   }
-  const dbc = requireDb(env);
+  const dbc = payRequireDb(env);
   const product = await db.getProductByName(dbc, PAID_REPORT_PRODUCT_NAME);
   const order = await db.createOrder(dbc, {
     customer_id: null,
@@ -89,10 +92,10 @@ export async function handlePayStatus(request, env) {
   const url = new URL(request.url);
   const orderNo = url.searchParams.get('orderNo') || '';
   const token = url.searchParams.get('token') || '';
-  if (!orderNo || !token) throw badRequest('缺少 orderNo 或 token');
+  if (!orderNo || !token) throw payBadRequest('缺少 orderNo 或 token');
 
-  const order = await db.getOrderByOrderNo(requireDb(env), orderNo);
-  if (!order || order.client_token !== token) throw notFound('找不到這筆訂單');
+  const order = await db.getOrderByOrderNo(payRequireDb(env), orderNo);
+  if (!order || order.client_token !== token) throw payNotFound('找不到這筆訂單');
 
   return { status: order.status };
 }
@@ -129,7 +132,7 @@ export async function handleNewebpayReturn(request, env) {
 
   if (decoded.Status === 'SUCCESS' && decoded.MerchantOrderNo) {
     try {
-      await db.markOrderPaidByOrderNo(requireDb(env), decoded.MerchantOrderNo, { payment_type: decoded.PaymentType });
+      await db.markOrderPaidByOrderNo(payRequireDb(env), decoded.MerchantOrderNo, { payment_type: decoded.PaymentType });
     } catch (err) {
       console.error('markOrderPaidByOrderNo (return) failed:', err);
     }
