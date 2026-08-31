@@ -711,10 +711,18 @@ async function buildTradeInfo({ hashKey, hashIv, params }) {
 // 回傳解密後的參數物件（例如 { Status, MerchantOrderNo, TradeAmt, PaymentType, ... }），
 // 如果檢查碼不對會回傳 null（代表這筆通知可能被竄改，不可信任）。
 async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) {
+  const { result } = await verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tradeSha });
+  return result;
+}
+
+// 跟上面一樣，但同時回傳一個簡短、不含金鑰/完整雜湊值的失敗原因代碼
+// （sha_mismatch / decrypt_fail），方便在還沒辦法順利看到 Cloudflare Logs
+// 的情況下，直接把原因帶回前端畫面顯示出來除錯。
+async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tradeSha }) {
   const expectedSha = await sha256Hex(`HashKey=${hashKey}&${tradeInfo}&HashIV=${hashIv}`);
   if (expectedSha !== (tradeSha || '').toUpperCase()) {
     console.log('[newebpay] TradeSha mismatch:', JSON.stringify({ expectedSha, receivedSha: tradeSha, tradeInfoLength: (tradeInfo || '').length }));
-    return null;
+    return { result: null, reason: 'sha_mismatch:exp' + expectedSha.slice(0, 6) + ':got' + (tradeSha || '').slice(0, 6) };
   }
 
   const key = await importAesKey(hashKey);
@@ -724,7 +732,7 @@ async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) 
     decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
   } catch (err) {
     console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message);
-    return null;
+    return { result: null, reason: 'decrypt_fail:' + err.message.slice(0, 40) };
   }
   const decrypted = new TextDecoder().decode(decryptedBuf);
   const result = {};
@@ -732,7 +740,7 @@ async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) 
     const [k, v] = pair.split('=');
     if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
   }
-  return result;
+  return { result, reason: null };
 }
 
 // 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType
@@ -1302,20 +1310,24 @@ async function handlePayStatus(request, env) {
 // 網址帶 ?paid=1 或 ?paid=0，前端看到後還會再打一次 /pay/status 用權杖二次確認，
 // 不會只憑這個網址參數就放行。
 async function handleNewebpayReturn(request, env) {
-  const redirectTo = (paid) => Response.redirect(SITE_URL + '/?paid=' + paid, 302);
+  // debug 參數只帶一個簡短原因代碼（不含金鑰或完整雜湊值），純粹是暫時的
+  // 除錯輔助——還沒辦法順利查看 Cloudflare Logs，所以先讓失敗原因直接顯示在
+  // 使用者畫面上，之後確認問題解決就可以把這段拿掉。
+  const redirectTo = (paid, debugReason) =>
+    Response.redirect(SITE_URL + '/?paid=' + paid + (debugReason ? '&debug=' + encodeURIComponent(debugReason) : ''), 302);
 
-  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0);
+  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0, 'not_configured');
 
   const { tradeInfo, tradeSha } = await readTradeFields(request);
-  if (!tradeInfo || !tradeSha) return redirectTo(0);
+  if (!tradeInfo || !tradeSha) return redirectTo(0, 'no_fields_method' + request.method + '_ct' + (request.headers.get('content-type') || 'none'));
 
-  const decoded = await verifyAndDecryptNotify({
+  const { result: decoded, reason } = await verifyAndDecryptNotifyDiagnostic({
     hashKey: env.NEWEBPAY_HASH_KEY,
     hashIv: env.NEWEBPAY_HASH_IV,
     tradeInfo,
     tradeSha,
   });
-  if (!decoded) return redirectTo(0);
+  if (!decoded) return redirectTo(0, reason || 'unknown');
 
   if (decoded.Status === 'SUCCESS' && decoded.MerchantOrderNo) {
     try {
@@ -1325,7 +1337,7 @@ async function handleNewebpayReturn(request, env) {
     }
     return redirectTo(1);
   }
-  return redirectTo(0);
+  return redirectTo(0, 'status_' + (decoded.Status || 'missing'));
 }
 
 // ---------- index.js ----------

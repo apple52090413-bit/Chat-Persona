@@ -8,7 +8,7 @@
 // ============================================================
 
 import * as db from './db.js';
-import { buildTradeInfo, verifyAndDecryptNotify, readTradeFields } from './newebpay.js';
+import { buildTradeInfo, verifyAndDecryptNotifyDiagnostic, readTradeFields } from './newebpay.js';
 
 const PAID_REPORT_AMOUNT = 99;
 const PAID_REPORT_PRODUCT_NAME = '雙人關係報告（單次）';
@@ -108,20 +108,24 @@ export async function handlePayStatus(request, env) {
 // 網址帶 ?paid=1 或 ?paid=0，前端看到後還會再打一次 /pay/status 用權杖二次確認，
 // 不會只憑這個網址參數就放行。
 export async function handleNewebpayReturn(request, env) {
-  const redirectTo = (paid) => Response.redirect(SITE_URL + '/?paid=' + paid, 302);
+  // debug 參數只帶一個簡短原因代碼（不含金鑰或完整雜湊值），純粹是暫時的
+  // 除錯輔助——還沒辦法順利查看 Cloudflare Logs，所以先讓失敗原因直接顯示在
+  // 使用者畫面上，之後確認問題解決就可以把這段拿掉。
+  const redirectTo = (paid, debugReason) =>
+    Response.redirect(SITE_URL + '/?paid=' + paid + (debugReason ? '&debug=' + encodeURIComponent(debugReason) : ''), 302);
 
-  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0);
+  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0, 'not_configured');
 
   const { tradeInfo, tradeSha } = await readTradeFields(request);
-  if (!tradeInfo || !tradeSha) return redirectTo(0);
+  if (!tradeInfo || !tradeSha) return redirectTo(0, 'no_fields_method' + request.method + '_ct' + (request.headers.get('content-type') || 'none'));
 
-  const decoded = await verifyAndDecryptNotify({
+  const { result: decoded, reason } = await verifyAndDecryptNotifyDiagnostic({
     hashKey: env.NEWEBPAY_HASH_KEY,
     hashIv: env.NEWEBPAY_HASH_IV,
     tradeInfo,
     tradeSha,
   });
-  if (!decoded) return redirectTo(0);
+  if (!decoded) return redirectTo(0, reason || 'unknown');
 
   if (decoded.Status === 'SUCCESS' && decoded.MerchantOrderNo) {
     try {
@@ -131,5 +135,5 @@ export async function handleNewebpayReturn(request, env) {
     }
     return redirectTo(1);
   }
-  return redirectTo(0);
+  return redirectTo(0, 'status_' + (decoded.Status || 'missing'));
 }

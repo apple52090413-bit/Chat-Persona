@@ -53,10 +53,18 @@ export async function buildTradeInfo({ hashKey, hashIv, params }) {
 // 回傳解密後的參數物件（例如 { Status, MerchantOrderNo, TradeAmt, PaymentType, ... }），
 // 如果檢查碼不對會回傳 null（代表這筆通知可能被竄改，不可信任）。
 export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) {
+  const { result } = await verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tradeSha });
+  return result;
+}
+
+// 跟上面一樣，但同時回傳一個簡短、不含金鑰/完整雜湊值的失敗原因代碼
+// （sha_mismatch / decrypt_fail），方便在還沒辦法順利看到 Cloudflare Logs
+// 的情況下，直接把原因帶回前端畫面顯示出來除錯。
+export async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tradeSha }) {
   const expectedSha = await sha256Hex(`HashKey=${hashKey}&${tradeInfo}&HashIV=${hashIv}`);
   if (expectedSha !== (tradeSha || '').toUpperCase()) {
     console.log('[newebpay] TradeSha mismatch:', JSON.stringify({ expectedSha, receivedSha: tradeSha, tradeInfoLength: (tradeInfo || '').length }));
-    return null;
+    return { result: null, reason: 'sha_mismatch:exp' + expectedSha.slice(0, 6) + ':got' + (tradeSha || '').slice(0, 6) };
   }
 
   const key = await importAesKey(hashKey);
@@ -66,7 +74,7 @@ export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, trade
     decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
   } catch (err) {
     console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message);
-    return null;
+    return { result: null, reason: 'decrypt_fail:' + err.message.slice(0, 40) };
   }
   const decrypted = new TextDecoder().decode(decryptedBuf);
   const result = {};
@@ -74,7 +82,7 @@ export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, trade
     const [k, v] = pair.split('=');
     if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
   }
-  return result;
+  return { result, reason: null };
 }
 
 // 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType
