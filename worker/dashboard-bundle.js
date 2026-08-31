@@ -691,6 +691,31 @@ async function importAesKey(hashKey) {
   return crypto.subtle.importKey('raw', new TextEncoder().encode(hashKey), { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
 }
 
+// WebCrypto's 'AES-CBC' always validates PKCS7 padding on decrypt and throws
+// if the final block's padding isn't well-formed. That's a problem if
+// NewebPay's own encryption of the Notify/Return TradeInfo doesn't produce
+// standard PKCS7 padding (e.g. a zero-padded or already block-aligned
+// payload) - live testing hit exactly this failure even after confirming
+// (via a passing TradeSha, which could only match with the correct key/iv)
+// that the key material itself is right.
+//
+// Workaround: append one extra block that WE encrypt with valid PKCS7
+// padding (continuing the CBC chain from the real ciphertext's last block),
+// so the built-in padding check passes on that appended block, then keep
+// only the first N bytes of the output (the real ciphertext's decrypted
+// bytes are unaffected by whatever comes after them in CBC mode).
+async function decryptAesCbcTolerant(key, iv, ciphertext) {
+  const blockSize = 16;
+  const prevBlock = ciphertext.length >= blockSize ? ciphertext.slice(ciphertext.length - blockSize) : iv;
+  const paddingBlock = new Uint8Array(blockSize).fill(blockSize);
+  const dummyCipherFull = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: prevBlock }, key, paddingBlock));
+  const extended = new Uint8Array(ciphertext.length + blockSize);
+  extended.set(ciphertext, 0);
+  extended.set(dummyCipherFull.slice(0, blockSize), ciphertext.length);
+  const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, extended));
+  return plain.slice(0, ciphertext.length);
+}
+
 // 建立要送去藍新收銀台的 TradeInfo / TradeSha（用在「前往付款」那一步，
 // 把使用者導去藍新的付款頁）。
 async function buildTradeInfo({ hashKey, hashIv, params }) {
@@ -733,20 +758,33 @@ async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tr
   const isValidHex = /^[0-9a-fA-F]+$/.test(tradeInfo || '');
   const key = await importAesKey(hashKey);
   const iv = new TextEncoder().encode(hashIv);
+  const ciphertext = fromHex(tradeInfo);
   let decryptedBuf;
+  let usedTolerant = false;
   try {
-    decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
+    decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ciphertext);
   } catch (err) {
-    const diag = 'len' + hexLen + '_hex' + (isValidHex ? '1' : '0') + '_mod16-' + (hexLen % 32);
-    console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message, diag);
-    return { result: null, reason: 'decrypt_fail:' + diag + ':' + err.message.slice(0, 25) };
+    // 標準 PKCS7 驗證失敗——嘗試繞過填充檢查再解一次，因為簽章已經證明金鑰是對的，
+    // 唯一合理的解釋是藍新這邊送出的加密內容本身不是標準 PKCS7 填充。
+    try {
+      decryptedBuf = await decryptAesCbcTolerant(key, iv, ciphertext);
+      usedTolerant = true;
+    } catch (err2) {
+      const diag = 'len' + hexLen + '_hex' + (isValidHex ? '1' : '0') + '_mod16-' + (hexLen % 32);
+      console.log('[newebpay] AES decrypt failed (both strict and tolerant):', err.message, err2.message, diag);
+      return { result: null, reason: 'decrypt_fail:' + diag + ':' + err.message.slice(0, 25) };
+    }
   }
-  const decrypted = new TextDecoder().decode(decryptedBuf);
+  // 沒有標準 PKCS7 填充可以拿掉時，結尾可能還留著一些填充用的位元組
+  // （例如全部補 0），解成文字後把結尾這些看不見的控制字元清掉再切割欄位。
+  let decrypted = new TextDecoder().decode(decryptedBuf);
+  if (usedTolerant) decrypted = decrypted.replace(/[\x00-\x1f]+$/, '');
   const result = {};
   for (const pair of decrypted.split('&')) {
     const [k, v] = pair.split('=');
     if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
   }
+  if (usedTolerant) console.log('[newebpay] decrypted via tolerant (non-PKCS7) fallback:', JSON.stringify(result));
   return { result, reason: null };
 }
 
