@@ -67,14 +67,21 @@ export async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeI
     return { result: null, reason: 'sha_mismatch:exp' + expectedSha.slice(0, 6) + ':got' + (tradeSha || '').slice(0, 6) };
   }
 
+  // TradeSha 通過了，代表 hashKey/hashIv 這兩個值本身是對的（NewebPay 用同樣
+  // 的字串才會算出一樣的雜湊）；如果接下來 AES 解密還是失敗，問題應該出在
+  // tradeInfo 這個 16 進位字串本身有問題（長度不是偶數、含非 16 進位字元等），
+  // 先做個檢查，把診斷資訊直接附進失敗原因，不用再靠 log。
+  const hexLen = (tradeInfo || '').length;
+  const isValidHex = /^[0-9a-fA-F]+$/.test(tradeInfo || '');
   const key = await importAesKey(hashKey);
   const iv = new TextEncoder().encode(hashIv);
   let decryptedBuf;
   try {
     decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
   } catch (err) {
-    console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message);
-    return { result: null, reason: 'decrypt_fail:' + err.message.slice(0, 40) };
+    const diag = 'len' + hexLen + '_hex' + (isValidHex ? '1' : '0') + '_mod16-' + (hexLen % 32);
+    console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message, diag);
+    return { result: null, reason: 'decrypt_fail:' + diag + ':' + err.message.slice(0, 25) };
   }
   const decrypted = new TextDecoder().decode(decryptedBuf);
   const result = {};
