@@ -2,8 +2,11 @@
 // 藍新金流（NewebPay）MPG 介面串接工具
 //
 // ⚠️ 這個檔案的演算法（AES-256-CBC 加解密 + SHA256 檢查碼）是依照藍新
-// 金流 MPG API 文件的標準做法寫的，但欄位名稱、後台網址等細節請在拿到
-// 特約商店資格、下載到官方最新文件後，對照一次再上線使用。
+// 金流 MPG API 文件的標準做法寫的。曾經在 TradeSha 的組字串裡多寫了一段
+// 「TradeInfo=」，導致藍新回報「交易資料 SHA 256 檢查不符合」——正確格式
+// 是 HashKey=<key>&<加密後的 TradeInfo 值>&HashIV=<iv>，中間沒有欄位名稱，
+// 已對照多份公開範例程式碼修正。如果之後又遇到簽章不符的錯誤，這裡是第一個
+// 該回頭檢查的地方。
 //
 // 需要的三個值（申請特約商店通過後，藍新後台會給你）：
 //   MerchantID — 商店代號
@@ -40,7 +43,9 @@ export async function buildTradeInfo({ hashKey, hashIv, params }) {
   const iv = new TextEncoder().encode(hashIv);
   const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, new TextEncoder().encode(query));
   const tradeInfo = toHex(new Uint8Array(encrypted));
-  const tradeSha = await sha256Hex(`HashKey=${hashKey}&TradeInfo=${tradeInfo}&HashIV=${hashIv}`);
+  // 藍新的公式是 HashKey=<key>&<原始 TradeInfo 值>&HashIV=<iv> —— 中間沒有
+  // 「TradeInfo=」這個欄位名稱，只是把加密結果直接接在兩個 & 中間。
+  const tradeSha = await sha256Hex(`HashKey=${hashKey}&${tradeInfo}&HashIV=${hashIv}`);
   return { tradeInfo, tradeSha };
 }
 
@@ -48,7 +53,7 @@ export async function buildTradeInfo({ hashKey, hashIv, params }) {
 // 回傳解密後的參數物件（例如 { Status, MerchantOrderNo, TradeAmt, PaymentType, ... }），
 // 如果檢查碼不對會回傳 null（代表這筆通知可能被竄改，不可信任）。
 export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) {
-  const expectedSha = await sha256Hex(`HashKey=${hashKey}&TradeInfo=${tradeInfo}&HashIV=${hashIv}`);
+  const expectedSha = await sha256Hex(`HashKey=${hashKey}&${tradeInfo}&HashIV=${hashIv}`);
   if (expectedSha !== (tradeSha || '').toUpperCase()) return null;
 
   const key = await importAesKey(hashKey);
