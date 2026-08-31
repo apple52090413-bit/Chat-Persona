@@ -8,7 +8,7 @@
 // ============================================================
 
 import * as db from './db.js';
-import { buildTradeInfo, verifyAndDecryptNotify } from './newebpay.js';
+import { buildTradeInfo, verifyAndDecryptNotify, readTradeFields } from './newebpay.js';
 
 const PAID_REPORT_AMOUNT = 99;
 const PAID_REPORT_PRODUCT_NAME = '雙人關係報告（單次）';
@@ -112,14 +112,7 @@ export async function handleNewebpayReturn(request, env) {
 
   if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0);
 
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return redirectTo(0);
-  }
-  const tradeInfo = form.get('TradeInfo');
-  const tradeSha = form.get('TradeSha');
+  const { tradeInfo, tradeSha } = await readTradeFields(request);
   if (!tradeInfo || !tradeSha) return redirectTo(0);
 
   const decoded = await verifyAndDecryptNotify({

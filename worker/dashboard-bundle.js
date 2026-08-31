@@ -731,6 +731,32 @@ async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) 
   return result;
 }
 
+// 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType
+// 是否也會改變這兩個背景/導回請求的請求格式（表單 vs JSON、POST vs GET
+// 查詢字串）寫得不清楚，與其賭對哪一種，這裡都接受：先看 body（JSON 或表單），
+// 沒有的話再看網址上的查詢字串。
+async function readTradeFields(request) {
+  const contentType = request.headers.get('content-type') || '';
+  try {
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      if (body.TradeInfo && body.TradeSha) return { tradeInfo: body.TradeInfo, tradeSha: body.TradeSha };
+    } else if (request.method === 'POST') {
+      const form = await request.formData();
+      const tradeInfo = form.get('TradeInfo');
+      const tradeSha = form.get('TradeSha');
+      if (tradeInfo && tradeSha) return { tradeInfo, tradeSha };
+    }
+  } catch {
+    // fall through to query-string check below
+  }
+  const url = new URL(request.url);
+  return {
+    tradeInfo: url.searchParams.get('TradeInfo'),
+    tradeSha: url.searchParams.get('TradeSha'),
+  };
+}
+
 // ---------- db.js ----------
 // ---------- Customers ----------
 
@@ -1124,14 +1150,7 @@ async function handleNewebpayNotify(request, env) {
   if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) {
     return new Response('Not configured', { status: 500 });
   }
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return new Response('Bad Request', { status: 400 });
-  }
-  const tradeInfo = form.get('TradeInfo');
-  const tradeSha = form.get('TradeSha');
+  const { tradeInfo, tradeSha } = await readTradeFields(request);
   if (!tradeInfo || !tradeSha) return new Response('Bad Request', { status: 400 });
 
   const decoded = await verifyAndDecryptNotify({
@@ -1261,14 +1280,7 @@ async function handleNewebpayReturn(request, env) {
 
   if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0);
 
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return redirectTo(0);
-  }
-  const tradeInfo = form.get('TradeInfo');
-  const tradeSha = form.get('TradeSha');
+  const { tradeInfo, tradeSha } = await readTradeFields(request);
   if (!tradeInfo || !tradeSha) return redirectTo(0);
 
   const decoded = await verifyAndDecryptNotify({
@@ -1477,6 +1489,7 @@ const ROUTES = [
   { method: 'POST', path: '/pay/create-order', handler: handleCreatePublicOrder },
   { method: 'GET', path: '/pay/status', handler: handlePayStatus },
   { method: 'POST', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
+  { method: 'GET', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
 ];
 
 function matchRoute(method, pathname) {

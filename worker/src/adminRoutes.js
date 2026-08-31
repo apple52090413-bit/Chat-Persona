@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { issueToken, verifyToken, getBearerToken } from './auth.js';
-import { buildTradeInfo, verifyAndDecryptNotify } from './newebpay.js';
+import { buildTradeInfo, verifyAndDecryptNotify, readTradeFields } from './newebpay.js';
 
 function adminBadRequest(message) {
   const err = new Error(message);
@@ -167,14 +167,7 @@ export async function handleNewebpayNotify(request, env) {
   if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) {
     return new Response('Not configured', { status: 500 });
   }
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return new Response('Bad Request', { status: 400 });
-  }
-  const tradeInfo = form.get('TradeInfo');
-  const tradeSha = form.get('TradeSha');
+  const { tradeInfo, tradeSha } = await readTradeFields(request);
   if (!tradeInfo || !tradeSha) return new Response('Bad Request', { status: 400 });
 
   const decoded = await verifyAndDecryptNotify({

@@ -204,6 +204,7 @@ const ROUTES = [
   { method: 'POST', path: '/pay/create-order', handler: handleCreatePublicOrder },
   { method: 'GET', path: '/pay/status', handler: handlePayStatus },
   { method: 'POST', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
+  { method: 'GET', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
 ];
 
 function matchRoute(method, pathname) {

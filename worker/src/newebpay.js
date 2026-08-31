@@ -72,3 +72,29 @@ export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, trade
   }
   return result;
 }
+
+// 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType
+// 是否也會改變這兩個背景/導回請求的請求格式（表單 vs JSON、POST vs GET
+// 查詢字串）寫得不清楚，與其賭對哪一種，這裡都接受：先看 body（JSON 或表單），
+// 沒有的話再看網址上的查詢字串。
+export async function readTradeFields(request) {
+  const contentType = request.headers.get('content-type') || '';
+  try {
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      if (body.TradeInfo && body.TradeSha) return { tradeInfo: body.TradeInfo, tradeSha: body.TradeSha };
+    } else if (request.method === 'POST') {
+      const form = await request.formData();
+      const tradeInfo = form.get('TradeInfo');
+      const tradeSha = form.get('TradeSha');
+      if (tradeInfo && tradeSha) return { tradeInfo, tradeSha };
+    }
+  } catch {
+    // fall through to query-string check below
+  }
+  const url = new URL(request.url);
+  return {
+    tradeInfo: url.searchParams.get('TradeInfo'),
+    tradeSha: url.searchParams.get('TradeSha'),
+  };
+}
