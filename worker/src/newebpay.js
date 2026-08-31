@@ -127,7 +127,7 @@ export async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeI
     if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
   }
   if (usedTolerant) console.log('[newebpay] decrypted via tolerant (non-PKCS7) fallback:', JSON.stringify(result));
-  return { result, reason: null };
+  return { result, reason: null, rawDecrypted: decrypted };
 }
 
 // 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType

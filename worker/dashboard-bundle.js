@@ -785,7 +785,7 @@ async function verifyAndDecryptNotifyDiagnostic({ hashKey, hashIv, tradeInfo, tr
     if (k) result[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
   }
   if (usedTolerant) console.log('[newebpay] decrypted via tolerant (non-PKCS7) fallback:', JSON.stringify(result));
-  return { result, reason: null };
+  return { result, reason: null, rawDecrypted: decrypted };
 }
 
 // 從藍新的 Notify/Return 請求裡取出 TradeInfo / TradeSha。文件對 RespondType
@@ -1366,7 +1366,7 @@ async function handleNewebpayReturn(request, env) {
   const { tradeInfo, tradeSha } = await readTradeFields(request);
   if (!tradeInfo || !tradeSha) return redirectTo(0, 'no_fields_method' + request.method + '_ct' + (request.headers.get('content-type') || 'none'));
 
-  const { result: decoded, reason } = await verifyAndDecryptNotifyDiagnostic({
+  const { result: decoded, reason, rawDecrypted } = await verifyAndDecryptNotifyDiagnostic({
     hashKey: env.NEWEBPAY_HASH_KEY,
     hashIv: env.NEWEBPAY_HASH_IV,
     tradeInfo,
@@ -1382,7 +1382,13 @@ async function handleNewebpayReturn(request, env) {
     }
     return redirectTo(1);
   }
-  return redirectTo(0, 'status_' + (decoded.Status || 'missing'));
+  // decoded 解密成功了，但沒有我們預期的 Status 欄位——把實際解出來的「欄位
+  // 名稱」跟開頭一小段原始內容附進除錯代碼（不含值本身、只取前 80 字，避免
+  // 卡號末幾碼之類的資料完整顯示在畫面上），這樣才知道藍新實際回傳的格式
+  // 到底長怎樣。
+  const gotKeys = Object.keys(decoded).join(',');
+  const rawPreview = (rawDecrypted || '').slice(0, 80);
+  return redirectTo(0, 'status_' + (decoded.Status || 'missing') + ':keys=' + gotKeys.slice(0, 100) + ':raw=' + rawPreview);
 }
 
 // ---------- index.js ----------
