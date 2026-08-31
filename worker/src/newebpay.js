@@ -54,14 +54,18 @@ export async function buildTradeInfo({ hashKey, hashIv, params }) {
 // 如果檢查碼不對會回傳 null（代表這筆通知可能被竄改，不可信任）。
 export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, tradeSha }) {
   const expectedSha = await sha256Hex(`HashKey=${hashKey}&${tradeInfo}&HashIV=${hashIv}`);
-  if (expectedSha !== (tradeSha || '').toUpperCase()) return null;
+  if (expectedSha !== (tradeSha || '').toUpperCase()) {
+    console.log('[newebpay] TradeSha mismatch:', JSON.stringify({ expectedSha, receivedSha: tradeSha, tradeInfoLength: (tradeInfo || '').length }));
+    return null;
+  }
 
   const key = await importAesKey(hashKey);
   const iv = new TextEncoder().encode(hashIv);
   let decryptedBuf;
   try {
     decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, fromHex(tradeInfo));
-  } catch {
+  } catch (err) {
+    console.log('[newebpay] AES decrypt failed despite valid TradeSha:', err.message);
     return null;
   }
   const decrypted = new TextDecoder().decode(decryptedBuf);
@@ -77,8 +81,26 @@ export async function verifyAndDecryptNotify({ hashKey, hashIv, tradeInfo, trade
 // 是否也會改變這兩個背景/導回請求的請求格式（表單 vs JSON、POST vs GET
 // 查詢字串）寫得不清楚，與其賭對哪一種，這裡都接受：先看 body（JSON 或表單），
 // 沒有的話再看網址上的查詢字串。
+//
+// 之前這裡猜過一次格式問題，猜錯了，Notify 還是失敗——所以這次一律先把
+// request 複製一份、把原始 body 文字印進 console.log，不管後面解析成不成功
+// 都留下診斷紀錄，下次失敗就不用再用猜的，直接去 Cloudflare 的 Observability
+// / Logs 看實際收到的內容長怎樣。
 export async function readTradeFields(request) {
   const contentType = request.headers.get('content-type') || '';
+  let rawBodyForLog = '(no body / not read)';
+  try {
+    rawBodyForLog = await request.clone().text();
+  } catch (err) {
+    rawBodyForLog = '(failed to read body for logging: ' + err.message + ')';
+  }
+  console.log('[newebpay] incoming request:', JSON.stringify({
+    method: request.method,
+    url: request.url,
+    contentType,
+    bodyPreview: rawBodyForLog.slice(0, 2000),
+  }));
+
   try {
     if (contentType.includes('application/json')) {
       const body = await request.json();
@@ -89,12 +111,16 @@ export async function readTradeFields(request) {
       const tradeSha = form.get('TradeSha');
       if (tradeInfo && tradeSha) return { tradeInfo, tradeSha };
     }
-  } catch {
-    // fall through to query-string check below
+  } catch (err) {
+    console.log('[newebpay] body parse failed:', err.message);
   }
   const url = new URL(request.url);
-  return {
+  const fromQuery = {
     tradeInfo: url.searchParams.get('TradeInfo'),
     tradeSha: url.searchParams.get('TradeSha'),
   };
+  if (!fromQuery.tradeInfo || !fromQuery.tradeSha) {
+    console.log('[newebpay] could not find TradeInfo/TradeSha in body or query string');
+  }
+  return fromQuery;
 }
