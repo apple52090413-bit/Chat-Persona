@@ -108,24 +108,27 @@ export async function handlePayStatus(request, env) {
 // 網址帶 ?paid=1 或 ?paid=0，前端看到後還會再打一次 /pay/status 用權杖二次確認，
 // 不會只憑這個網址參數就放行。
 export async function handleNewebpayReturn(request, env) {
-  // debug 參數只帶一個簡短原因代碼（不含金鑰或完整雜湊值），純粹是暫時的
-  // 除錯輔助——還沒辦法順利查看 Cloudflare Logs，所以先讓失敗原因直接顯示在
-  // 使用者畫面上，之後確認問題解決就可以把這段拿掉。
-  const redirectTo = (paid, debugReason) =>
-    Response.redirect(SITE_URL + '/?paid=' + paid + (debugReason ? '&debug=' + encodeURIComponent(debugReason) : ''), 302);
+  const redirectTo = (paid) => Response.redirect(SITE_URL + '/?paid=' + paid, 302);
 
-  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0, 'not_configured');
+  if (!env.NEWEBPAY_HASH_KEY || !env.NEWEBPAY_HASH_IV) return redirectTo(0);
 
   const { tradeInfo, tradeSha } = await readTradeFields(request);
-  if (!tradeInfo || !tradeSha) return redirectTo(0, 'no_fields_method' + request.method + '_ct' + (request.headers.get('content-type') || 'none'));
+  if (!tradeInfo || !tradeSha) return redirectTo(0);
 
-  const { result: decoded, reason, rawDecrypted } = await verifyAndDecryptNotifyDiagnostic({
+  // 用 …Diagnostic 版本（而不是簡化過的 verifyAndDecryptNotify）純粹是為了
+  // 保留 console.log 診斷紀錄，方便未來萬一又出問題時查——但失敗原因不會
+  // 再顯示在使用者畫面上了（之前串接除錯用，問題已解決，不該讓真正的顧客
+  // 看到這些內部技術細節）。
+  const { result: decoded, reason } = await verifyAndDecryptNotifyDiagnostic({
     hashKey: env.NEWEBPAY_HASH_KEY,
     hashIv: env.NEWEBPAY_HASH_IV,
     tradeInfo,
     tradeSha,
   });
-  if (!decoded) return redirectTo(0, reason || 'unknown');
+  if (!decoded) {
+    console.error('[newebpay] return verify failed:', reason);
+    return redirectTo(0);
+  }
 
   if (decoded.Status === 'SUCCESS' && decoded.MerchantOrderNo) {
     try {
@@ -135,11 +138,6 @@ export async function handleNewebpayReturn(request, env) {
     }
     return redirectTo(1);
   }
-  // decoded 解密成功了，但沒有我們預期的 Status 欄位——把實際解出來的「欄位
-  // 名稱」跟開頭一小段原始內容附進除錯代碼（不含值本身、只取前 80 字，避免
-  // 卡號末幾碼之類的資料完整顯示在畫面上），這樣才知道藍新實際回傳的格式
-  // 到底長怎樣。
-  const gotKeys = Object.keys(decoded).join(',');
-  const rawPreview = (rawDecrypted || '').slice(0, 80);
-  return redirectTo(0, 'status_' + (decoded.Status || 'missing') + ':keys=' + gotKeys.slice(0, 100) + ':raw=' + rawPreview);
+  console.error('[newebpay] return decoded but not a success status:', decoded.Status, decoded.MerchantOrderNo);
+  return redirectTo(0);
 }

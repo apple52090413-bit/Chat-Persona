@@ -2613,10 +2613,7 @@
     const raw = sessionStorage.getItem('cpPendingOrder');
     sessionStorage.removeItem('cpPendingOrder');
     if(paid === '0'){
-      // debug 是暫時的除錯用參數（後端 payRoutes.js 加的，之後問題解決會拿掉），
-      // 還沒能順利看到 Cloudflare Logs 之前，先讓失敗原因直接顯示在畫面上。
-      const debugReason = url.searchParams.get('debug');
-      alert('付款未完成，請重新嘗試一次。' + (debugReason ? ('\n\n[除錯代碼，請截圖給客服] ' + debugReason) : ''));
+      alert('付款未完成，請重新嘗試一次。');
       return;
     }
     if(paid !== '1') return;
