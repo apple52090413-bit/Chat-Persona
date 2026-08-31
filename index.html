@@ -1351,6 +1351,7 @@
 
       <div class="modal-note">選好關係後，就可以前往付款頁完成解鎖。</div>
       <button class="btn btn-primary btn-full" onclick="goToPayment()">前往付款 NT$99 →</button>
+      <button class="btn btn-ghost btn-full" id="internalUnlockBtn" style="display:none; margin-top:8px;" onclick="internalUnlockToPaid()">🔓 內部測試（不扣款，跳過付款）</button>
     </div>
   </div>
 </div>
@@ -2657,6 +2658,23 @@
     document.getElementById('consentAnalyze').checked = false;
     startBtn.textContent = '開始分析雙人關係';
     updateStartBtn();
+  }
+
+  // ---------- 內部測試用：跳過真的付款，直接解鎖雙人報告 ----------
+  // 只給你自己內部測試/錄製推廣素材用，不是給客人看的功能。網址後面加上
+  // ?internal=chatpersona-team-preview-2026 才會出現這顆按鈕，沒有加這個網址
+  // 參數的一般訪客完全看不到、也用不到。這只是一道簡單的門檻，不是真正的
+  // 帳號登入，網址不要公開分享出去。
+  (function initInternalUnlock(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('internal') !== 'chatpersona-team-preview-2026') return;
+    const btn = document.getElementById('internalUnlockBtn');
+    if(btn) btn.style.display = '';
+  })();
+  function internalUnlockToPaid(){
+    hidePaywall();
+    enterPaidUploadMode();
+    goTo('upload');
   }
 </script>
 </body>
