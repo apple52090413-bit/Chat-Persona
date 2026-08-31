@@ -16,6 +16,7 @@ import {
   handleListOrders, handleCreateOrder, handleUpdateOrderStatus,
   handleCreatePayment, handleNewebpayNotify,
 } from './adminRoutes.js';
+import { handleCreatePublicOrder, handlePayStatus, handleNewebpayReturn } from './payRoutes.js';
 
 function corsHeaders(env, request) {
   const origin = request.headers.get('Origin') || '';
@@ -199,6 +200,10 @@ const ROUTES = [
   { method: 'POST', path: '/admin/create-payment', handler: handleCreatePayment },
 
   { method: 'POST', path: '/webhook/newebpay', handler: handleNewebpayNotify, raw: true },
+
+  { method: 'POST', path: '/pay/create-order', handler: handleCreatePublicOrder },
+  { method: 'GET', path: '/pay/status', handler: handlePayStatus },
+  { method: 'POST', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
 ];
 
 function matchRoute(method, pathname) {

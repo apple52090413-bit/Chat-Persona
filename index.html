@@ -395,30 +395,13 @@
   .npay-order-row{ display:flex; justify-content:space-between; font-size:12px; color:#5c6b80; padding:4px 0; }
   .npay-amount-row{ border-top:1px dashed #e2e8f0; margin-top:4px; padding-top:8px; }
   .npay-amount{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:17px; color:#0f5aa8; }
-  .npay-tabs{ display:flex; gap:6px; margin-bottom:14px; }
-  .npay-tab{
-    flex:1; min-width:0; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:9px 4px;
-    font-size:12px; color:#5c6b80; cursor:pointer; font-weight:700;
+  .npay-redirect-wrap{ text-align:center; padding:36px 10px; }
+  .npay-spinner{
+    width:38px; height:38px; margin:0 auto 18px; border-radius:50%;
+    border:3px solid #d3dce6; border-top-color:#0f5aa8; animation:npaySpin 0.8s linear infinite;
   }
-  .npay-tab.selected{ background:#0f5aa8; border-color:#0f5aa8; color:#fff; }
-  .npay-field-group{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
-  .npay-field label{ display:block; font-size:10.5px; color:#5c6b80; margin-bottom:4px; }
-  .npay-field input{
-    width:100%; background:#fff; border:1px solid #d3dce6; border-radius:8px; padding:10px 12px;
-    font-size:13px; color:#1a2c42; font-family:"Noto Sans TC",sans-serif;
-  }
-  .npay-field-row{ display:flex; gap:10px; }
-  .npay-field-row .npay-field{ flex:1; min-width:0; }
-  .npay-atm-box, .npay-cvs-box{
-    background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px; text-align:center;
-  }
-  .npay-atm-code{ font-family:"Noto Serif TC",serif; font-size:20px; font-weight:900; color:#0f5aa8; letter-spacing:.06em; margin:8px 0; }
-  .npay-atm-box p, .npay-cvs-box p{ font-size:11px; color:#5c6b80; line-height:1.6; }
-  .npay-pay-btn{
-    width:100%; background:#0f5aa8; color:#fff; border:none; border-radius:10px; padding:14px;
-    font-size:15px; font-weight:700; cursor:pointer; font-family:"Noto Sans TC",sans-serif;
-  }
-  .npay-pay-btn:active{ background:#0d4c8f; }
+  @keyframes npaySpin{ to{ transform:rotate(360deg); } }
+  .npay-redirect-text{ font-size:13px; color:#5c6b80; line-height:1.7; }
   .npay-footnote{ text-align:center; font-size:9.5px; color:#94a3b8; margin-top:10px; line-height:1.5; }
   .npay-error{ min-height:14px; font-size:11px; color:#c0392b; text-align:center; margin-top:8px; }
   .consent-box{ display:flex; flex-direction:column; gap:8px; }
@@ -1114,7 +1097,7 @@
     </label>
 
     <div class="upload-bottom">
-      <button class="btn btn-primary btn-full" id="goToNpayBtn" disabled onclick="goTo('npay')">前往藍新金流付款 →</button>
+      <button class="btn btn-primary btn-full" id="goToNpayBtn" disabled onclick="goToNewebpayCheckout()">前往藍新金流付款 →</button>
       <div class="site-footer">
         <button class="footer-link" onclick="goTo('policies')">服務條款與隱私權政策</button>
         <span class="footer-sep">·</span>
@@ -1124,7 +1107,7 @@
     </div>
   </section>
 
-  <!-- SCREEN: NEWEBPAY CHECKOUT (MOCK) -->
+  <!-- SCREEN: NEWEBPAY CHECKOUT REDIRECT -->
   <section class="screen npay-screen" data-screen="npay">
     <div class="npay-topbar">
       <button class="npay-back" onclick="goTo('payment')">← 返回商店</button>
@@ -1137,22 +1120,17 @@
     </div>
 
     <div class="npay-order">
-      <div class="npay-order-row"><span>訂單編號</span><span id="npayOrderId">DEMO20260824001</span></div>
-      <div class="npay-order-row"><span>特約商店</span><span>聊天人格分析</span></div>
+      <div class="npay-order-row"><span>商品</span><span>雙人關係深度報告</span></div>
+      <div class="npay-order-row"><span>特約商店</span><span>Chat Persona</span></div>
       <div class="npay-order-row npay-amount-row"><span>應付金額</span><span class="npay-amount">NT$ 99</span></div>
     </div>
 
-    <div class="npay-tabs" id="npayTabs">
-      <button class="npay-tab selected" data-tab="card" onclick="selectNpayTab('card')">信用卡</button>
-      <button class="npay-tab" data-tab="atm" onclick="selectNpayTab('atm')">ATM 轉帳</button>
-      <button class="npay-tab" data-tab="cvs" onclick="selectNpayTab('cvs')">超商代碼</button>
+    <div class="npay-redirect-wrap">
+      <div class="npay-spinner"></div>
+      <p class="npay-redirect-text" id="npayRedirectText">正在為你建立訂單，準備導向藍新金流安全付款頁面...</p>
     </div>
-
-    <div id="npayTabContent"></div>
     <p class="npay-error" id="npayError"></p>
-
-    <button class="npay-pay-btn" onclick="confirmPayment()">確認付款 NT$99</button>
-    <p class="npay-footnote">本頁面模擬藍新金流付款介面，僅供原型展示，不會產生任何真實交易</p>
+    <p class="npay-footnote">完成付款後，藍新金流會自動把你導回這個網站</p>
     </div>
   </section>
 
@@ -1437,13 +1415,12 @@
   document.getElementById('parentBrandTag').innerHTML = parentBrandMarkup();
 
   // ---------- 畫面切換 ----------
-  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', policies:'畫面 · 服務條款與政策', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 藍新金流收銀台', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
+  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', policies:'畫面 · 服務條款與政策', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 導向藍新金流付款', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
   function goTo(name){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.querySelector('[data-screen="'+name+'"]').classList.add('active');
     document.getElementById('stagelabel').textContent = stageNames[name] || '';
     if(name==='loading') runLoading();
-    if(name==='npay') initNpayCheckout();
     if(name==='landing') renderTypesCarousel();
     if(name==='historyLog') renderHistoryLog();
   }
@@ -1700,6 +1677,24 @@
         headers:{ 'content-type':'application/json' },
         body: JSON.stringify(payload),
       });
+    } catch(networkErr){
+      throw new Error('連不到分析伺服器，請確認網路連線或 API_BASE 網址是否正確。');
+    }
+    let data = {};
+    try{ data = await res.json(); } catch{ /* 非 JSON 回應時 data 保持空物件 */ }
+    if(!res.ok){
+      throw new Error(data.error || ('伺服器錯誤（'+res.status+'）'));
+    }
+    return data;
+  }
+
+  async function callApiGet(path){
+    if(!API_BASE){
+      throw new Error('尚未設定後端 API 網址，請參考 worker/README.md 部署 Cloudflare Worker，並把網址填進 index.html 的 API_BASE。');
+    }
+    let res;
+    try{
+      res = await fetch(API_BASE + path);
     } catch(networkErr){
       throw new Error('連不到分析伺服器，請確認網路連線或 API_BASE 網址是否正確。');
     }
@@ -2567,64 +2562,84 @@
     goTo('payment');
   }
 
-  // ---------- 藍新金流收銀台（模擬跳轉頁）----------
-  let currentNpayTab = 'card';
-  function initNpayCheckout(){
-    const orderId = 'DEMO' + Date.now().toString().slice(-9);
-    document.getElementById('npayOrderId').textContent = orderId;
-    selectNpayTab('card');
-  }
-  function selectNpayTab(tab){
-    currentNpayTab = tab;
+  // ---------- 藍新金流付款：建立訂單並導向藍新的真實付款頁 ----------
+  // 按下「前往藍新金流付款」後：先跟後端建立一筆訂單（拿到 TradeInfo/TradeSha），
+  // 把訂單編號跟一組隨機權杖存進 sessionStorage（等付款完從藍新導回來時，靠這組
+  // 權杖跟後端確認這筆訂單真的已經付款，不能只信任網址列上的參數），然後組一個
+  // 隱藏表單，用瀏覽器原生表單送出（不是 fetch）把使用者導去藍新的收銀台頁面。
+  async function goToNewebpayCheckout(){
+    goTo('npay');
     const errEl = document.getElementById('npayError');
+    const textEl = document.getElementById('npayRedirectText');
     if(errEl) errEl.textContent = '';
-    document.querySelectorAll('.npay-tab').forEach(b=>b.classList.toggle('selected', b.dataset.tab===tab));
-    const el = document.getElementById('npayTabContent');
-    if(tab==='card'){
-      el.innerHTML =
-        '<div class="npay-field-group">'+
-          '<div class="npay-field"><label>卡號</label><input type="text" id="npayCardNumber" placeholder="4242 4242 4242 4242" maxlength="19"></div>'+
-          '<div class="npay-field-row">'+
-            '<div class="npay-field"><label>有效期限 (MM/YY)</label><input type="text" id="npayCardExpiry" placeholder="MM/YY" maxlength="5"></div>'+
-            '<div class="npay-field"><label>安全碼 CVV</label><input type="text" id="npayCardCvv" placeholder="123" maxlength="3"></div>'+
-          '</div>'+
-          '<div class="npay-field"><label>持卡人姓名</label><input type="text" id="npayCardName" placeholder="請輸入信用卡上的英文姓名"></div>'+
-        '</div>';
-    } else if(tab==='atm'){
-      const acct = '822-' + Math.floor(1000000 + Math.random()*9000000);
-      el.innerHTML =
-        '<div class="npay-atm-box">'+
-          '<p>請於期限內使用網路銀行或 ATM 轉帳至下方藍新虛擬帳號：</p>'+
-          '<div class="npay-atm-code">'+acct+'</div>'+
-          '<p>繳費期限：24 小時內．金額：NT$99。轉帳完成後系統會自動比對入帳並解鎖報告，不需要回報或截圖。</p>'+
-        '</div>';
-    } else if(tab==='cvs'){
-      const code = Math.floor(1000000000 + Math.random()*8999999999);
-      el.innerHTML =
-        '<div class="npay-cvs-box">'+
-          '<p>請至四大超商繳費機輸入以下代碼完成付款：</p>'+
-          '<div class="npay-atm-code">'+code+'</div>'+
-          '<p>繳費期限：3 天內．金額：NT$99。超商繳費完成後系統會自動確認並解鎖報告。</p>'+
-        '</div>';
+    try{
+      const data = await callApi('/pay/create-order', { relationshipType: selectedRelationship || '曖昧' });
+      sessionStorage.setItem('cpPendingOrder', JSON.stringify({
+        orderNo: data.orderNo,
+        token: data.clientToken,
+        relationshipType: selectedRelationship || '曖昧',
+      }));
+      if(textEl) textEl.textContent = '訂單建立完成，正在導向藍新金流付款頁面...';
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.gatewayUrl;
+      form.style.display = 'none';
+      const fields = { MerchantID: data.merchantId, TradeInfo: data.tradeInfo, TradeSha: data.tradeSha, Version: data.version };
+      Object.entries(fields).forEach(([name, value])=>{
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = name; input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch(err){
+      if(errEl) errEl.textContent = (err && err.message) || '建立訂單失敗，請稍後再試一次。';
+      if(textEl) textEl.textContent = '無法導向付款頁面';
     }
   }
 
-  function confirmPayment(){
-    const errEl = document.getElementById('npayError');
-    if(currentNpayTab === 'card'){
-      const num = document.getElementById('npayCardNumber').value.trim();
-      const exp = document.getElementById('npayCardExpiry').value.trim();
-      const cvv = document.getElementById('npayCardCvv').value.trim();
-      const name = document.getElementById('npayCardName').value.trim();
-      if(!num || !exp || !cvv || !name){
-        if(errEl) errEl.textContent = '⚠ 請填寫完整的卡號、有效期限、安全碼與持卡人姓名';
-        return;
-      }
+  // ---------- 藍新金流付款完成後，從 Return URL 導回本站時的處理 ----------
+  // 藍新的 Return URL 導回的是 Worker（不是這個靜態網站，因為 Return URL 是瀏覽器
+  // POST 導頁，靜態網站沒有後端可以接收），Worker 驗證完會員再把瀏覽器導回這裡，
+  // 網址後面帶 ?paid=1 或 ?paid=0。這裡絕對不能只看網址參數就放行——網址參數任何
+  // 人都能自己打——一定要拿 sessionStorage 存的那組隨機權杖，再問一次後端這筆訂單
+  // 是不是真的變成付款完成，才真正解鎖付費功能。
+  async function handleNewebpayReturnBoot(){
+    const url = new URL(window.location.href);
+    const paid = url.searchParams.get('paid');
+    if(paid === null) return;
+    history.replaceState(null, '', url.pathname);
+
+    const raw = sessionStorage.getItem('cpPendingOrder');
+    sessionStorage.removeItem('cpPendingOrder');
+    if(paid === '0'){
+      alert('付款未完成，請重新嘗試一次。');
+      return;
     }
-    if(errEl) errEl.textContent = '';
-    enterPaidUploadMode();
-    goTo('upload');
+    if(paid !== '1') return;
+    let pending = null;
+    try{ pending = raw ? JSON.parse(raw) : null; } catch{ pending = null; }
+    if(!pending || !pending.orderNo || !pending.token){
+      // 分頁的 sessionStorage 不見了（例如用另一個瀏覽器分頁打開返回連結），
+      // 沒辦法在這裡自動確認訂單，但錢可能已經扣款成功，不能什麼都不說。
+      alert('付款流程已完成，但這個分頁遺失了訂單資訊，無法自動繼續。如果已經扣款，請聯絡客服協助確認並解鎖報告。');
+      return;
+    }
+
+    try{
+      const status = await callApiGet('/pay/status?orderNo='+encodeURIComponent(pending.orderNo)+'&token='+encodeURIComponent(pending.token));
+      if(status.status === 'paid'){
+        selectedRelationship = pending.relationshipType || '曖昧';
+        enterPaidUploadMode();
+        goTo('upload');
+      } else {
+        alert('尚未查到這筆付款，如果已經扣款請稍等一下再重新整理，或聯絡客服協助確認。');
+      }
+    } catch(err){
+      alert((err && err.message) || '確認付款狀態時發生錯誤，請聯絡客服協助確認。');
+    }
   }
+  handleNewebpayReturnBoot();
 
   // ---------- 付款完成後：切換上傳頁為「雙人關係」模式 ----------
   function enterPaidUploadMode(){

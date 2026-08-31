@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_type TEXT,
   paid_at TEXT,
   note TEXT,
+  -- 客戶自助結帳流程用的隨機權杖：付款完從藍新導回本站後，前端靠這組權杖
+  -- （不是只憑 order_no）跟後端確認這筆訂單真的已經付款。見 worker/src/payRoutes.js。
+  client_token TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

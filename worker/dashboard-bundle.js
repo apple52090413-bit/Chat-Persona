@@ -795,6 +795,10 @@ async function deleteProduct(db, id) {
   await db.prepare('DELETE FROM products WHERE id = ?').bind(id).run();
 }
 
+async function getProductByName(db, name) {
+  return db.prepare('SELECT * FROM products WHERE name = ? LIMIT 1').bind(name).first();
+}
+
 // ---------- Orders ----------
 
 async function listOrders(db, { status } = {}) {
@@ -840,11 +844,21 @@ function generateOrderNo() {
   return 'ORD' + stamp + rand;
 }
 
+// 給客戶自助結帳流程用：一組隨機、無法猜測的權杖，付款完成從藍新導回本站後，
+// 前端要拿這組權杖（不是只憑 order_no）跟後端確認這筆訂單真的已經付款，
+// 避免有人自己編一個 order_no 或猜別人的訂單就解鎖付費功能。
+function generateClientToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function createOrder(db, { customer_id, product_id, amount, note }) {
   const orderNo = generateOrderNo();
+  const clientToken = generateClientToken();
   const res = await db.prepare(
-    'INSERT INTO orders (order_no, customer_id, product_id, amount, note, status) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(orderNo, customer_id || null, product_id || null, amount, note || null, 'pending').run();
+    'INSERT INTO orders (order_no, customer_id, product_id, amount, note, status, client_token) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(orderNo, customer_id || null, product_id || null, amount, note || null, 'pending', clientToken).run();
   return getOrder(db, res.meta.last_row_id);
 }
 
@@ -1312,6 +1326,10 @@ const ROUTES = [
   { method: 'POST', path: '/admin/create-payment', handler: handleCreatePayment },
 
   { method: 'POST', path: '/webhook/newebpay', handler: handleNewebpayNotify, raw: true },
+
+  { method: 'POST', path: '/pay/create-order', handler: handleCreatePublicOrder },
+  { method: 'GET', path: '/pay/status', handler: handlePayStatus },
+  { method: 'POST', path: '/return/newebpay', handler: handleNewebpayReturn, raw: true },
 ];
 
 function matchRoute(method, pathname) {

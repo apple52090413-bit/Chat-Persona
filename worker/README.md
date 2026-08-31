@@ -125,26 +125,35 @@ const API_BASE = 'https://chat-persona-api.<你的 subdomain>.workers.dev';
 
 存檔、commit、push（或直接編輯 GitHub 上的檔案），GitHub Pages 會自動重新部署。之後打開你網站網址加上 `/admin.html`（例如 `https://your-user.github.io/chat-persona/admin.html`）就能進到訂單後台，用剛剛設定的 `ADMIN_PASSWORD` 登入。
 
-## 5.（選用）串接藍新金流真實付款
+## 5. 串接藍新金流真實付款
 
-前面步驟做完，訂單後台已經可以手動建立訂單、手動標記已付款，拿來記帳、管理客戶完全夠用。如果想要**使用者自己按「付款」就真的能刷卡扣款**，才需要這一步——而且前提是你已經申請到藍新金流的**特約商店資格**（見專案主 README 或問我要申請流程）。
+前面步驟做完，訂單後台已經可以手動建立訂單、手動標記已付款，拿來記帳、管理客戶完全夠用。這一步是讓**網站上的客戶自己按「前往藍新金流付款」就真的能刷卡扣款、自動解鎖付費報告**——前提是你已經申請到藍新金流的**特約商店資格**且審核通過（後台商店管理頁面顯示「營運狀態：營運中」）。
 
-拿到資格後，藍新後台會給你三個值：
+拿到資格後，藍新後台會給你三個值，**直接在 Cloudflare Dashboard 貼上，不要打字貼進聊天視窗**：
 
-```bash
-npx wrangler secret put NEWEBPAY_MERCHANT_ID   # 商店代號
-npx wrangler secret put NEWEBPAY_HASH_KEY      # 32 字元
-npx wrangler secret put NEWEBPAY_HASH_IV       # 16 字元
-```
+到 Worker 的 **Settings → Variables and Secrets**，新增以下三筆，類型都選 **Secret / Encrypt**：
 
-另外設定兩個一般變數（不是密鑰，可以用 Settings 裡的一般 Variable，或 `wrangler secret put` 也可以）：
+- `NEWEBPAY_MERCHANT_ID` — 商店代號
+- `NEWEBPAY_HASH_KEY` — 32 字元
+- `NEWEBPAY_HASH_IV` — 16 字元
 
-- `NEWEBPAY_RETURN_URL` — 使用者付款完成後，瀏覽器會被導回的網址（通常是你網站的一個「付款完成」頁面）
-- `NEWEBPAY_NOTIFY_URL` — 藍新伺服器對伺服器通知付款結果的網址，填這個 Worker 本身的 `/webhook/newebpay`，例如 `https://chat-persona-api.<你的 subdomain>.workers.dev/webhook/newebpay`
+再新增兩筆一般變數（Variable，不用加密即可）：
 
-設定好之後，後台的「前往付款」流程會呼叫 `POST /admin/create-payment`，回傳把使用者導去藍新收銀台需要的參數；藍新那邊付款完成後會呼叫 `NEWEBPAY_NOTIFY_URL`，Worker 會自動驗證簽章、把對應訂單標記為已付款。
+- `NEWEBPAY_NOTIFY_URL` — 填 `https://chat-persona-api.<你的 subdomain>.workers.dev/webhook/newebpay`（藍新伺服器對伺服器背景通知，跟你之前設定的一樣，不用改）
+- `NEWEBPAY_RETURN_URL` — 填 `https://chat-persona-api.<你的 subdomain>.workers.dev/return/newebpay`（**注意是導到 Worker，不是導到 chatpersonachatlab.com**——因為藍新的 Return URL 是瀏覽器 POST 導頁，靜態網站沒有後端可以接收這個 POST，要先讓 Worker 驗證完，再由 Worker 把瀏覽器轉導回真正的網站）
 
-⚠️ `worker/src/newebpay.js` 裡的加解密／簽章演算法是照藍新 MPG API 標準文件寫的，且已經用假金鑔做過完整的加密/解密/簽章驗證測試（確認邏輯正確），但正式串接前，請對照你拿到的藍新官方文件（欄位名稱、正式/測試環境網址）再確認一次，避免版本差異。
+儲存後通常需要重新部署一次讓變數生效。
+
+設定好之後，客戶端的真實付款流程是：
+
+1. 客戶在付款頁按「前往藍新金流付款」→ 前端呼叫 `POST /pay/create-order`（不需要登入），Worker 建立一筆訂單、算好 `TradeInfo`/`TradeSha`
+2. 前端用隱藏表單把瀏覽器導去藍新的收銀台頁面（`gatewayUrl`），客戶在藍新的頁面上真正刷卡
+3. 付款完成，藍新同時：
+   - 呼叫 `NEWEBPAY_NOTIFY_URL`（伺服器對伺服器，背景進行）→ Worker 驗證簽章、把訂單標記為已付款
+   - 把客戶的瀏覽器導回 `NEWEBPAY_RETURN_URL`（也就是 `/return/newebpay`）→ Worker 一樣驗證＋標記已付款，再把瀏覽器轉導回 `https://chatpersonachatlab.com/?paid=1`
+4. 前端看到網址帶 `?paid=1`，會再呼叫一次 `GET /pay/status` 用建立訂單時拿到的權杖跟後端二次確認訂單真的是付款完成，才解鎖付費上傳流程——不會只信任網址參數。
+
+⚠️ `worker/src/newebpay.js` 裡的加解密／簽章演算法是照藍新 MPG API 標準文件寫的，且已經用假金鑔做過完整的加密/解密/簽章驗證測試（確認邏輯正確），但正式上線前，建議先自己實際付一筆 NT$99 走過一次完整流程，確認報告有正常解鎖、後台訂單狀態也正確變成「已付款」。
 
 ## 本機測試（不需要先部署）
 
@@ -194,8 +203,14 @@ npx wrangler d1 execute DB --local --file=./schema.sql
 - `GET /admin/customers` / `POST /admin/customers` / `PATCH /admin/customers/:id` / `DELETE /admin/customers/:id`
 - `GET /admin/products` / `POST /admin/products` / `PATCH /admin/products/:id` / `DELETE /admin/products/:id`
 - `GET /admin/orders`（可加 `?status=pending` 篩選）/ `POST /admin/orders` / `PATCH /admin/orders/:id/status`（`{ status: 'pending'|'paid'|'failed'|'cancelled' }`）
-- `POST /admin/create-payment` — `{ orderId }`，回傳藍新收銀台需要的參數（需要先設定好 `NEWEBPAY_*` 金鑰）
+- `POST /admin/create-payment` — `{ orderId }`，回傳藍新收銀台需要的參數（需要先設定好 `NEWEBPAY_*` 金鑰），這是後台手動建單用的，客戶端結帳走的是下面的 `/pay/create-order`
 - `POST /webhook/newebpay` — 藍新伺服器對伺服器的付款通知（不是給前端呼叫的，藍新後台設定 Notify URL 指到這裡）
+
+以下是給網站客戶端結帳用的公開端點（不需要登入）：
+
+- `POST /pay/create-order` — `{ relationshipType? }` → `{ orderNo, clientToken, gatewayUrl, merchantId, version, tradeInfo, tradeSha }`，建立一筆 NT$99 訂單並回傳導去藍新收銀台需要的參數
+- `GET /pay/status?orderNo=...&token=...` — 用建立訂單時拿到的 `clientToken` 查詢這筆訂單的付款狀態，`token` 對不上就查不到（避免被亂猜訂單號碼）
+- `POST /return/newebpay` — 藍新的 Return URL，客戶付款完瀏覽器會被導到這裡（不是給前端 fetch 呼叫的），Worker 驗證完會直接把瀏覽器轉導回 `chatpersonachatlab.com`
 
 ## 費用與額度
 
