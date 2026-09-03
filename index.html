@@ -773,6 +773,429 @@
   .compare-list li{ font-size:11.5px; color:var(--ink-soft); display:flex; gap:6px; align-items:flex-start; }
   .compare-block.free .compare-list li::before{ content:'✓'; color:var(--ink-dim); }
   .compare-block.paid .compare-list li::before{ content:'✓'; color:var(--gold); font-weight:700; }
+
+  /* ==========================================================
+     抽獎分頁（命運籤 / FATE DRAW）
+     介面展示用；資料只存在本機 localStorage，不涉及任何金流。
+     色系刻意跟主站的淺色調反著走：進到這個分頁像走進另一個房間。
+     ========================================================== */
+  :root{
+    --lot-void:#08050f; --lot-deep:#120c26; --lot-mid:#1d1540; --lot-raise:#271c52;
+    --lot-line:rgba(216,172,98,0.26); --lot-line-hi:rgba(216,172,98,0.6);
+    --lot-gold:#e9c281; --lot-ink:#efe6ff; --lot-dim:#9b8fc4;
+    --r-common:#9a92b8; --r-rare:#6ecff2; --r-epic:#ffae43; --r-legend:#ff5f86;
+    --mono: ui-monospace, "SFMono-Regular", "Roboto Mono", Menlo, monospace;
+  }
+
+  /* ---------- 底部分頁列 ---------- */
+  .tabbar{
+    position:absolute; left:0; right:0; bottom:0; height:66px; z-index:30;
+    display:flex; align-items:stretch; padding:0 6px 6px;
+    background:linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.92) 34%, #ffffff 100%);
+    border-top:1px solid var(--line);
+    transition: transform .34s cubic-bezier(.4,0,.2,1), opacity .2s ease;
+  }
+  .tabbar[hidden]{ display:none; }
+  .tabbar.retracted{ transform:translateY(100%); opacity:0; pointer-events:none; }
+  .tabbar-item{
+    position:relative; flex:1; appearance:none; border:none; background:none; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    padding:8px 0 4px; color:var(--ink-dim); font-family:"Noto Sans TC",sans-serif;
+  }
+  .tabbar-ico{ width:23px; height:23px; display:block; transition:transform .3s cubic-bezier(.34,1.7,.5,1); }
+  .tabbar-ico path, .tabbar-ico circle, .tabbar-ico rect{
+    stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+    transition:stroke .22s ease;
+  }
+  .tabbar-lab{ font-size:10px; letter-spacing:.06em; font-weight:500; transition:color .22s ease; }
+  .tabbar-item.on{ color:var(--gold); }
+  .tabbar-item.on .tabbar-lab{ font-weight:700; }
+  .tabbar-item.pop .tabbar-ico{ animation:tabPop .42s cubic-bezier(.34,1.6,.5,1); }
+  @keyframes tabPop{ 0%{transform:scale(1)} 32%{transform:scale(.82) translateY(1px)} 100%{transform:scale(1)} }
+  .tabbar-dot{
+    position:absolute; top:7px; left:calc(50% + 9px); width:6px; height:6px; border-radius:50%;
+    background:var(--rose); box-shadow:0 0 0 2px #fff; opacity:0; transform:scale(.4);
+    transition:opacity .25s ease, transform .3s cubic-bezier(.34,1.7,.5,1);
+  }
+  .tabbar-dot.on{ opacity:1; transform:scale(1); animation:tabDot 2.6s ease-in-out infinite 1s; }
+  @keyframes tabDot{ 0%,88%,100%{box-shadow:0 0 0 2px #fff}  94%{box-shadow:0 0 0 2px #fff, 0 0 0 7px rgba(255,147,169,0)} }
+  .tabbar-ind{
+    position:absolute; top:0; height:2px; border-radius:2px;
+    background:linear-gradient(90deg, transparent, var(--gold), transparent);
+    transition:transform .38s cubic-bezier(.3,1.5,.45,1), width .3s ease;
+  }
+  .screen.has-tabbar{ padding-bottom:74px; }
+  [data-screen="historyLog"] .back-btn{ display:none; }
+
+  /* ---------- 抽獎主畫面 ---------- */
+  .lot-screen{
+    padding:0 !important; background:
+      radial-gradient(120% 70% at 50% 8%, #2a1d54 0%, var(--lot-deep) 46%, var(--lot-void) 100%);
+    color:var(--lot-ink); overflow:hidden;
+  }
+  .lot-screen::after{ /* 細掃描線，讓底色不要死板 */
+    content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
+    background:repeating-linear-gradient(180deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+  }
+  .lot-shake{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    padding:22px 20px 78px; will-change:transform; z-index:2;
+  }
+  /* 進到抽獎分頁時，分頁列跟著換成深色，切換才不會有一條白邊突兀地留著 */
+  .tabbar.dark{
+    background:linear-gradient(180deg, rgba(8,5,15,0) 0%, rgba(9,6,19,.94) 36%, #08050f 100%);
+    border-top-color:rgba(216,172,98,.22);
+  }
+  .tabbar.dark .tabbar-item{ color:#736799; }
+  .tabbar.dark .tabbar-item.on{ color:var(--lot-gold); }
+  .tabbar.dark .tabbar-dot{ box-shadow:0 0 0 2px #0b0718; }
+  @keyframes tabDotDark{ 0%,88%,100%{box-shadow:0 0 0 2px #0b0718} 94%{box-shadow:0 0 0 2px #0b0718, 0 0 0 7px rgba(255,147,169,0)} }
+  .tabbar.dark .tabbar-dot.on{ animation-name:tabDotDark; }
+
+  /* 演出期間：主畫面退到後面，並把所有動畫凍住做頓幀 */
+  .lot-shake.dimmed{
+    transition:transform .4s cubic-bezier(.2,.9,.25,1), opacity .35s ease, filter .4s ease;
+    transform:scale(.965); opacity:.28; filter:blur(1.5px); pointer-events:none;
+  }
+  .lot-freeze *, .lot-freeze{ animation-play-state:paused !important; }
+  .lot-reveal-wrap{
+    position:absolute; inset:0; z-index:2; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:24px;
+  }
+
+  /* HUD */
+  .lot-hud{ display:flex; align-items:center; gap:8px; }
+  .lot-res{
+    appearance:none; cursor:pointer; display:flex; align-items:center; gap:6px;
+    background:rgba(255,255,255,0.045); border:1px solid var(--lot-line); border-radius:999px;
+    padding:6px 12px 6px 9px; color:var(--lot-ink); font-family:var(--mono);
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .lot-res:hover{ border-color:var(--lot-line-hi); background:rgba(255,255,255,0.08); }
+  .lot-res-mark{ color:var(--lot-gold); font-size:12px; line-height:1; }
+  .lot-res-val{ font-size:13.5px; font-weight:700; letter-spacing:.02em; font-variant-numeric:tabular-nums; }
+  .lot-res-val.bump{ animation:valBump .5s cubic-bezier(.34,1.7,.5,1); color:var(--lot-gold); }
+  @keyframes valBump{ 0%{transform:scale(1)} 30%{transform:scale(1.34)} 100%{transform:scale(1)} }
+  .lot-res-label{ font-family:"Noto Sans TC",sans-serif; font-size:9.5px; color:var(--lot-dim); letter-spacing:.1em; }
+  .lot-res-ticket{ cursor:default; padding-left:5px; }
+  .lot-regen{ width:20px; height:20px; transform:rotate(-90deg); flex:none; }
+  .lot-regen .bg{ fill:none; stroke:rgba(255,255,255,.13); stroke-width:3; }
+  .lot-regen .arc{ fill:none; stroke:var(--lot-gold); stroke-width:3; stroke-linecap:round; transition:stroke-dashoffset .9s linear; }
+  .lot-regen-time{ font-family:var(--mono); font-size:10px; color:var(--lot-dim); font-variant-numeric:tabular-nums; }
+  .lot-icon-btn{
+    margin-left:auto; width:32px; height:32px; flex:none; border-radius:50%; cursor:pointer;
+    background:rgba(255,255,255,0.045); border:1px solid var(--lot-line); color:var(--lot-dim);
+    display:flex; align-items:center; justify-content:center; font-size:13px;
+  }
+  .lot-icon-btn.muted{ color:#6b5f90; }
+  .lot-icon-btn:hover{ border-color:var(--lot-line-hi); color:var(--lot-gold); }
+
+  /* 標題 */
+  .lot-titles{ margin-top:16px; text-align:center; }
+  .lot-eyebrow{
+    font-family:"Cormorant Garamond",serif; font-style:italic; font-size:12px;
+    letter-spacing:.3em; color:var(--lot-gold); opacity:.85; margin:0 0 5px;
+  }
+  .lot-title{ font-size:19px; line-height:1.5; color:#fff; font-weight:700; letter-spacing:.01em; }
+  .lot-title b{ color:var(--lot-gold); }
+
+  /* 星盤 */
+  .lot-stage{
+    position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center;
+    margin:2px 0 4px;
+  }
+  .lot-orbit{ position:absolute; width:250px; height:250px; pointer-events:none; }
+  .lot-orbit svg{ width:100%; height:100%; overflow:visible; }
+  .lot-orbit .ring-a{ animation:spin 46s linear infinite; transform-origin:50% 50%; }
+  .lot-orbit .ring-b{ animation:spin 30s linear infinite reverse; transform-origin:50% 50%; }
+  .lot-orbit .ring-c{ animation:spin 90s linear infinite; transform-origin:50% 50%; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .lot-orbit [stroke]{ vector-effect:non-scaling-stroke; }
+  .lot-halo{
+    position:absolute; width:220px; height:220px; border-radius:50%; pointer-events:none;
+    background:radial-gradient(circle, rgba(233,194,129,.22) 0%, rgba(233,194,129,.05) 42%, transparent 68%);
+    animation:haloBreath 5.2s ease-in-out infinite;
+  }
+  @keyframes haloBreath{ 0%,100%{transform:scale(1); opacity:.75} 50%{transform:scale(1.09); opacity:1} }
+
+  /* 核心 = 抽籤按鈕 */
+  .lot-core{
+    position:relative; width:132px; height:132px; border-radius:50%; cursor:pointer;
+    appearance:none; border:1px solid var(--lot-line-hi); color:var(--lot-ink);
+    background:radial-gradient(circle at 50% 38%, #4a3785 0%, #241a4c 52%, #150f2e 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.05) inset, 0 18px 44px rgba(0,0,0,.55), 0 0 34px rgba(233,194,129,.14);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    touch-action:none; user-select:none; -webkit-user-select:none;
+    transition:transform .16s cubic-bezier(.34,1.6,.5,1), box-shadow .25s ease;
+  }
+  .lot-core:disabled{ cursor:not-allowed; filter:grayscale(.6) brightness(.72); }
+  .lot-core-label{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:19px; color:#fff; letter-spacing:.06em; }
+  .lot-core-sub{ font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; color:var(--lot-gold); opacity:.9; }
+  .lot-core-cost{ font-size:9.5px; color:var(--lot-dim); letter-spacing:.08em; margin-top:2px; }
+  .lot-core.charging{ transform:scale(.955); box-shadow:0 0 0 1px rgba(255,255,255,.05) inset, 0 8px 20px rgba(0,0,0,.6), 0 0 60px rgba(233,194,129,.4); }
+  .lot-core.charged{ animation:coreReady .5s ease-in-out infinite alternate; }
+  @keyframes coreReady{ from{ box-shadow:0 0 0 1px rgba(255,255,255,.06) inset, 0 0 44px rgba(233,194,129,.45) } to{ box-shadow:0 0 0 1px rgba(255,255,255,.06) inset, 0 0 78px rgba(255,222,160,.85) } }
+  .lot-charge{ position:absolute; inset:-11px; transform:rotate(-90deg); pointer-events:none; }
+  .lot-charge circle{ fill:none; stroke-width:2.5; stroke-linecap:round; }
+  .lot-charge .track{ stroke:rgba(255,255,255,.07); }
+  .lot-charge .fill{ stroke:var(--lot-gold); filter:drop-shadow(0 0 5px rgba(233,194,129,.8)); }
+  .lot-hint{
+    position:absolute; bottom:-4px; left:50%; transform:translateX(-50%); white-space:nowrap;
+    font-size:10.5px; color:var(--lot-dim); letter-spacing:.06em;
+  }
+  .lot-hint b{ color:var(--lot-gold); font-weight:500; }
+
+  /* 保底 */
+  .lot-pity{ margin-top:14px; }
+  .lot-pity-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .lot-pity-cap{ font-size:10.5px; letter-spacing:.1em; color:var(--lot-dim); }
+  .lot-pity-num{ font-family:var(--mono); font-size:11px; color:var(--lot-gold); font-variant-numeric:tabular-nums; }
+  .lot-pity-bar{
+    height:5px; border-radius:3px; background:rgba(255,255,255,.07); overflow:hidden; position:relative;
+    border:1px solid rgba(255,255,255,.05);
+  }
+  .lot-pity-fill{
+    height:100%; width:0; border-radius:3px; transition:width .6s cubic-bezier(.2,.8,.3,1);
+    background:linear-gradient(90deg, #7d63c9, var(--lot-gold));
+  }
+  .lot-pity-fill.hot{ background:linear-gradient(90deg, var(--lot-gold), var(--r-legend)); animation:pityHot 1.1s ease-in-out infinite; }
+  @keyframes pityHot{ 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.45)} }
+
+  /* 按鈕列 */
+  .lot-actions{ display:flex; gap:9px; margin-top:14px; }
+  .lot-btn{
+    flex:1; appearance:none; cursor:pointer; border-radius:14px; padding:12px 10px 11px;
+    background:rgba(255,255,255,0.05); border:1px solid var(--lot-line); color:var(--lot-ink);
+    font-family:"Noto Sans TC",sans-serif; text-align:center; position:relative; overflow:hidden;
+    transition:transform .14s ease, border-color .2s ease, background .2s ease;
+  }
+  .lot-btn:hover:not(:disabled){ border-color:var(--lot-line-hi); background:rgba(255,255,255,0.09); }
+  .lot-btn:active:not(:disabled){ transform:scale(.97); }
+  .lot-btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .lot-btn b{ display:block; font-size:14px; font-weight:700; color:#fff; letter-spacing:.04em; }
+  .lot-btn span{ display:block; font-size:9.5px; color:var(--lot-dim); margin-top:3px; letter-spacing:.05em; }
+  .lot-btn-ten{ background:linear-gradient(150deg, rgba(233,194,129,.2), rgba(255,95,134,.12)); border-color:var(--lot-line-hi); }
+  .lot-btn-ten b{ color:var(--lot-gold); }
+  .lot-btn-ten::after{
+    content:''; position:absolute; top:0; bottom:0; width:38%; left:-45%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent);
+    animation:sheen 4.4s ease-in-out infinite; pointer-events:none;
+  }
+  @keyframes sheen{ 0%,62%{left:-45%} 82%,100%{left:115%} }
+
+  .lot-foot{ display:flex; justify-content:center; gap:2px; margin-top:12px; }
+  .lot-link{
+    appearance:none; border:none; background:none; cursor:pointer; padding:5px 11px;
+    font-family:"Noto Sans TC",sans-serif; font-size:11px; color:var(--lot-dim); letter-spacing:.08em;
+    border-bottom:1px solid transparent;
+  }
+  .lot-link:hover{ color:var(--lot-gold); border-bottom-color:var(--lot-line); }
+  .lot-disclaimer{ margin-top:7px; text-align:center; font-size:9.5px; line-height:1.6; color:#6d6293; }
+
+  /* ---------- 演出圖層（蓋過分頁列） ---------- */
+  .lot-fx{ position:absolute; inset:0; z-index:60; pointer-events:none; }
+  .lot-flash{ position:absolute; inset:0; background:#fff; opacity:0; mix-blend-mode:screen; }
+  .lot-ab{ position:absolute; inset:0; opacity:0; mix-blend-mode:screen; }
+  .lot-ab.r{ background:rgba(255,40,60,.55); }
+  .lot-ab.c{ background:rgba(40,220,255,.5); }
+  .lot-vig{
+    position:absolute; inset:0; opacity:0; transition:opacity .3s ease;
+    background:radial-gradient(circle at 50% 46%, transparent 26%, rgba(4,2,10,.82) 78%);
+  }
+  .lot-bar{ position:absolute; left:0; right:0; height:62px; background:#05030c; transform:scaleY(0); }
+  .lot-bar.top{ top:0; transform-origin:top; }
+  .lot-bar.bot{ bottom:0; transform-origin:bottom; }
+  .lot-rays{
+    position:absolute; left:50%; top:44%; width:900px; height:900px; margin:-450px 0 0 -450px;
+    opacity:0; pointer-events:none; animation:spin 14s linear infinite;
+    background:repeating-conic-gradient(from 0deg, rgba(255,222,160,.16) 0deg 3deg, transparent 3deg 12deg);
+    -webkit-mask-image:radial-gradient(circle, #000 8%, transparent 62%);
+    mask-image:radial-gradient(circle, #000 8%, transparent 62%);
+  }
+
+  .lot-stage-layer{
+    position:absolute; inset:0; z-index:62; display:none; align-items:center; justify-content:center;
+    flex-direction:column; padding:24px; cursor:pointer;
+  }
+  .lot-stage-layer.on{ display:flex; }
+  .lot-skip{
+    position:absolute; top:16px; right:16px; font-family:var(--mono); font-size:10px; letter-spacing:.16em;
+    color:rgba(255,255,255,.42); border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:5px 11px;
+    background:rgba(0,0,0,.3); opacity:0; transition:opacity .3s ease;
+  }
+  .lot-skip.on{ opacity:1; }
+
+  /* 抽出來的卡 */
+  .lot-card{
+    position:relative; width:198px; border-radius:16px; padding:20px 16px 17px; text-align:center;
+    background:linear-gradient(168deg, var(--lot-raise), var(--lot-deep) 62%, #0d0820);
+    border:1px solid var(--cardline, var(--lot-line)); overflow:hidden;
+    box-shadow:0 26px 60px rgba(0,0,0,.66), 0 0 0 1px rgba(255,255,255,.04) inset;
+  }
+  .lot-card::before{ /* 箔紙掃光 */
+    content:''; position:absolute; top:-60%; bottom:-60%; width:52%; left:-70%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.3), transparent);
+    transform:rotate(8deg); pointer-events:none;
+  }
+  .lot-card.sweep::before{ animation:cardSweep .82s cubic-bezier(.25,.8,.3,1) .1s; }
+  @keyframes cardSweep{ from{ left:-70% } to{ left:130% } }
+  .lot-card-rar{
+    display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px;
+    letter-spacing:.2em; color:var(--cardaccent,#fff); border:1px solid currentColor; border-radius:999px;
+    padding:3px 9px; opacity:.9;
+  }
+  .lot-card-art{ width:82px; height:82px; margin:13px auto 10px; display:block; }
+  .lot-card-name{ font-family:"Noto Serif TC",serif; font-weight:900; font-size:17px; color:#fff; line-height:1.35; }
+  .lot-card-desc{ font-size:10.5px; line-height:1.65; color:var(--lot-dim); margin-top:7px; }
+  .lot-card-new{
+    position:absolute; top:11px; right:-30px; transform:rotate(38deg); width:100px; text-align:center;
+    background:var(--r-legend); color:#fff; font-size:9px; font-weight:700; letter-spacing:.16em; padding:3px 0;
+  }
+  .lot-card-dupe{ margin-top:9px; font-family:var(--mono); font-size:10px; color:var(--lot-gold); letter-spacing:.06em; }
+
+  .lot-legend-word{
+    display:flex; gap:4px; margin-bottom:16px; align-items:center; justify-content:center;
+  }
+  .lot-legend-word i{
+    font-family:"Noto Serif TC",serif; font-style:normal; font-weight:900; font-size:38px; line-height:1;
+    color:#fff; text-shadow:0 0 22px rgba(255,95,134,.85), 0 0 60px rgba(255,176,74,.5);
+    opacity:0; transform:translateY(-26px) scale(1.5);
+  }
+  .lot-tier-tag{
+    margin-top:14px; font-family:var(--mono); font-size:10px; letter-spacing:.3em;
+    color:var(--cardaccent,#fff); opacity:0;
+  }
+
+  /* 十連的格子 */
+  .lot-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:7px; width:100%; max-width:320px; }
+  .lot-slot{
+    aspect-ratio:.7; border-radius:8px; position:relative; overflow:hidden;
+    background:linear-gradient(160deg, var(--lot-raise), #100b24);
+    border:1px solid rgba(255,255,255,.07); opacity:0; transform:scale(1.7) rotate(-6deg);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .lot-slot svg{ width:66%; height:66%; }
+  .lot-slot .bar{ position:absolute; left:0; right:0; bottom:0; height:3px; background:currentColor; }
+  .lot-slot.hi{ box-shadow:0 0 18px currentColor, 0 0 0 1px currentColor inset; }
+  .lot-grid-title{
+    font-family:var(--mono); font-size:10px; letter-spacing:.28em; color:var(--lot-dim);
+    margin-bottom:14px; text-align:center;
+  }
+  .lot-grid-sum{
+    margin-top:16px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; opacity:0;
+  }
+  .lot-sum-chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.1em; padding:4px 10px; border-radius:999px;
+    border:1px solid currentColor;
+  }
+  .lot-cont{
+    position:absolute; left:0; right:0; bottom:84px; text-align:center; z-index:3; opacity:0; font-family:"Noto Sans TC",sans-serif; font-size:11.5px;
+    color:rgba(255,255,255,.5); letter-spacing:.14em;
+  }
+  .lot-cont.on{ animation:contBlink 1.8s ease-in-out infinite; opacity:1; }
+  @keyframes contBlink{ 0%,100%{opacity:.32} 50%{opacity:.9} }
+
+  /* 粒子 / 衝擊波 */
+  .lot-spark{ position:absolute; border-radius:50%; pointer-events:none; will-change:transform,opacity; }
+  .lot-shard{ position:absolute; pointer-events:none; will-change:transform,opacity; }
+  .lot-wave{
+    position:absolute; border-radius:50%; border:2px solid currentColor; pointer-events:none;
+    will-change:transform,opacity;
+  }
+  .lot-float{
+    position:absolute; font-family:var(--mono); font-size:14px; font-weight:700; letter-spacing:.04em;
+    pointer-events:none; white-space:nowrap; text-shadow:0 2px 10px rgba(0,0,0,.8);
+  }
+
+  /* ---------- Killfeed ---------- */
+  .killfeed{
+    position:absolute; right:0; top:74px; z-index:70; display:flex; flex-direction:column;
+    align-items:flex-end; gap:4px; pointer-events:none;
+  }
+  .kf{
+    display:flex; align-items:stretch; height:26px; max-width:270px;
+    background:rgba(6,4,14,.82); border-left:3px solid currentColor;
+    transform:translateX(102%); will-change:transform,opacity;
+  }
+  .kf-tier{
+    display:flex; align-items:center; padding:0 8px; font-family:var(--mono); font-size:9.5px;
+    letter-spacing:.16em; color:currentColor; background:rgba(255,255,255,.06);
+  }
+  .kf-body{ display:flex; align-items:center; gap:7px; padding:0 10px 0 9px; }
+  .kf-name{ font-size:11px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
+  .kf-gain{ font-family:var(--mono); font-size:10.5px; color:var(--lot-gold); font-variant-numeric:tabular-nums; }
+  .kf-chain{
+    align-self:flex-end; margin-top:2px; font-family:var(--mono); font-size:11px; letter-spacing:.18em;
+    color:var(--lot-gold); background:rgba(6,4,14,.82); border-left:3px solid var(--lot-gold);
+    padding:3px 9px; transform:translateX(102%); will-change:transform;
+  }
+
+  /* ---------- 底部抽屜（圖鑑 / 紀錄 / 機率） ---------- */
+  .lot-sheet{
+    position:absolute; inset:0; z-index:64; display:flex; align-items:flex-end;
+    background:rgba(4,2,10,.62); opacity:0; visibility:hidden; transition:opacity .26s ease;
+  }
+  .lot-sheet.on{ opacity:1; visibility:visible; }
+  .lot-sheet-card{
+    width:100%; max-height:78%; display:flex; flex-direction:column;
+    background:linear-gradient(180deg, #1c1440, #0c0720);
+    border-top:1px solid var(--lot-line-hi); border-radius:22px 22px 0 0; padding:16px 20px 22px;
+    transform:translateY(100%); transition:transform .38s cubic-bezier(.2,.9,.25,1);
+  }
+  .lot-sheet.on .lot-sheet-card{ transform:translateY(0); }
+  .lot-sheet-grab{ width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.18); margin:0 auto 12px; flex:none; }
+  .lot-sheet-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:12px; flex:none; }
+  .lot-sheet-head h3{ font-size:15px; color:#fff; }
+  .lot-sheet-head em{
+    font-family:"Cormorant Garamond",serif; font-size:11px; letter-spacing:.22em; color:var(--lot-gold); opacity:.8;
+  }
+  .lot-sheet-head .lot-sheet-x{ margin-left:auto; }
+  .lot-sheet-body{ overflow-y:auto; scrollbar-width:none; }
+  .lot-sheet-body::-webkit-scrollbar{ display:none; }
+
+  .codex-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+  .codex-cell{
+    border-radius:11px; padding:11px 8px 10px; text-align:center; position:relative;
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+    display:flex; flex-direction:column;
+  }
+  .codex-cell.owned{ border-color:currentColor; background:rgba(255,255,255,.07); }
+  .codex-cell svg{ width:38px; height:38px; margin:0 auto 6px; display:block; }
+  .codex-cell.locked svg{ filter:grayscale(1) brightness(.4); }
+  .codex-name{ font-size:10.5px; color:#fff; line-height:1.4; }
+  .codex-cell.locked .codex-name{ color:#5f5588; }
+  .codex-cnt{ font-family:var(--mono); font-size:9px; color:var(--lot-gold); margin:3px 0 6px; }
+  .codex-ex{
+    margin-top:auto; width:100%; appearance:none; cursor:pointer; border-radius:7px; padding:4px 0;
+    font-size:9.5px; letter-spacing:.06em; background:rgba(233,194,129,.14);
+    border:1px solid var(--lot-line); color:var(--lot-gold);
+  }
+  .codex-ex:disabled{ opacity:.3; cursor:not-allowed; }
+  .codex-note{ font-size:10.5px; color:var(--lot-dim); line-height:1.7; margin-bottom:12px; }
+
+  .log-row{
+    display:flex; align-items:center; gap:9px; padding:9px 2px; border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .log-tier{
+    font-family:var(--mono); font-size:9px; letter-spacing:.14em; border:1px solid currentColor;
+    border-radius:4px; padding:2px 6px; flex:none;
+  }
+  .log-name{ font-size:11.5px; color:var(--lot-ink); flex:1; }
+  .log-time{ font-family:var(--mono); font-size:9.5px; color:#6d6293; flex:none; }
+  .log-empty{ text-align:center; color:#6d6293; font-size:11.5px; padding:34px 0; }
+
+  .rate-row{
+    display:flex; align-items:center; gap:10px; padding:10px 2px; border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .rate-dot{ width:8px; height:8px; border-radius:50%; background:currentColor; flex:none; box-shadow:0 0 8px currentColor; }
+  .rate-name{ font-size:12px; color:#fff; flex:1; }
+  .rate-name em{ font-family:var(--mono); font-style:normal; font-size:9.5px; color:var(--lot-dim); margin-left:7px; letter-spacing:.14em; }
+  .rate-val{ font-family:var(--mono); font-size:12px; color:var(--lot-gold); font-variant-numeric:tabular-nums; }
+
+  @media (prefers-reduced-motion: reduce){
+    .lot-orbit .ring-a, .lot-orbit .ring-b, .lot-orbit .ring-c, .lot-halo,
+    .lot-btn-ten::after, .lot-rays, .lot-core.charged, .lot-pity-fill.hot{ animation:none !important; }
+  }
 </style>
 </head>
 <body>
@@ -907,6 +1330,93 @@
     <h2 class="section-title">分析紀錄</h2>
     <p class="history-note">紀錄只存在這次瀏覽中，重新整理頁面就會清空——正式版會存進你的帳號，永久保留。</p>
     <div class="history-list" id="historyList"></div>
+  </section>
+
+  <!-- SCREEN: 抽獎（命運籤） -->
+  <section class="screen lot-screen" data-screen="lottery">
+    <div class="lot-shake" id="lotShake">
+
+      <div class="lot-hud">
+        <button class="lot-res" onclick="LOT.openSheet('codex')" aria-label="開啟圖鑑">
+          <span class="lot-res-mark">✦</span>
+          <span class="lot-res-val" id="lotShards">0</span>
+          <span class="lot-res-label">星塵</span>
+        </button>
+        <div class="lot-res lot-res-ticket">
+          <svg class="lot-regen" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="bg" cx="12" cy="12" r="9"/>
+            <circle class="arc" id="lotRegenArc" cx="12" cy="12" r="9" stroke-dasharray="56.5" stroke-dashoffset="56.5"/>
+          </svg>
+          <span class="lot-res-val" id="lotTickets">0</span>
+          <span class="lot-res-label">籤</span>
+          <span class="lot-regen-time" id="lotRegenTime">—</span>
+        </div>
+        <button class="lot-icon-btn" id="lotMuteBtn" onclick="LOT.toggleMute()" aria-label="音效開關">♪</button>
+      </div>
+
+      <div class="lot-titles">
+        <p class="lot-eyebrow">FATE DRAW</p>
+        <h2 class="lot-title">抽一張命運籤，<br/>看今天會遇到<b>哪一種自己</b></h2>
+      </div>
+
+      <div class="lot-stage" id="lotStage">
+        <span class="lot-halo"></span>
+        <div class="lot-orbit" aria-hidden="true">
+          <svg viewBox="0 0 200 200">
+            <g class="ring-c">
+              <circle cx="100" cy="100" r="94" fill="none" stroke="rgba(233,194,129,.10)" stroke-width="1"/>
+              <circle cx="100" cy="100" r="94" fill="none" stroke="rgba(233,194,129,.4)" stroke-width="1"
+                      stroke-dasharray="2 26" stroke-linecap="round"/>
+            </g>
+            <g class="ring-a">
+              <circle cx="100" cy="100" r="76" fill="none" stroke="rgba(233,194,129,.18)" stroke-width="1"
+                      stroke-dasharray="34 12 5 12"/>
+              <circle cx="100" cy="24" r="2.6" fill="#e9c281"/>
+              <circle cx="176" cy="100" r="1.6" fill="#b49ce8"/>
+            </g>
+            <g class="ring-b">
+              <circle cx="100" cy="100" r="58" fill="none" stroke="rgba(180,156,232,.22)" stroke-width="1"
+                      stroke-dasharray="1 9" stroke-linecap="round"/>
+              <path d="M100 42 L152 130 L48 130 Z" fill="none" stroke="rgba(233,194,129,.14)" stroke-width="1"/>
+              <path d="M100 158 L48 70 L152 70 Z" fill="none" stroke="rgba(180,156,232,.12)" stroke-width="1"/>
+            </g>
+          </svg>
+        </div>
+
+        <button class="lot-core" id="lotCore" aria-label="長按蓄力抽一張命運籤">
+          <svg class="lot-charge" viewBox="0 0 154 154" aria-hidden="true">
+            <circle class="track" cx="77" cy="77" r="75"/>
+            <circle class="fill" id="lotChargeArc" cx="77" cy="77" r="75"
+                    stroke-dasharray="471" stroke-dashoffset="471"/>
+          </svg>
+          <span class="lot-core-label">抽 籤</span>
+          <span class="lot-core-sub">HOLD</span>
+          <span class="lot-core-cost">消耗 1 籤</span>
+        </button>
+
+        <span class="lot-hint" id="lotHint">按住蓄力，放開開籤 · <b>蓄力只影響演出，不動機率</b></span>
+      </div>
+
+      <div class="lot-pity">
+        <div class="lot-pity-top">
+          <span class="lot-pity-cap">保底進度 · 必定「星蝕」</span>
+          <span class="lot-pity-num" id="lotPityNum">0 / 70</span>
+        </div>
+        <div class="lot-pity-bar"><div class="lot-pity-fill" id="lotPityFill"></div></div>
+      </div>
+
+      <div class="lot-actions">
+        <button class="lot-btn" id="lotBtn1"><b>單抽</b><span>1 籤 · 按住核心也可以</span></button>
+        <button class="lot-btn lot-btn-ten" id="lotBtn10"><b>十連</b><span>10 籤 · 保底金焰</span></button>
+      </div>
+
+      <div class="lot-foot">
+        <button class="lot-link" onclick="LOT.openSheet('codex')">圖鑑</button>
+        <button class="lot-link" onclick="LOT.openSheet('log')">抽籤紀錄</button>
+        <button class="lot-link" onclick="LOT.openSheet('rates')">機率公示</button>
+      </div>
+      <p class="lot-disclaimer">介面展示用 Demo：不涉及任何實際付費、儲值或抽獎行為，籤與獎品皆為前端模擬。</p>
+    </div>
   </section>
 
   <!-- SCREEN: POLICIES（服務條款／隱私權／退換貨／客服，藍新金流審核要求揭露的項目）-->
@@ -1354,6 +1864,52 @@
       <button class="btn btn-ghost btn-full" id="internalUnlockBtn" style="display:none; margin-top:8px;" onclick="internalUnlockToPaid()">🔓 內部測試（不扣款，跳過付款）</button>
     </div>
   </div>
+
+  <!-- 抽獎演出圖層（放在 frame 底下，才能蓋過分頁列） -->
+  <div class="lot-fx" id="lotFx" aria-hidden="true">
+    <div class="lot-vig" id="lotVig"></div>
+    <div class="lot-rays" id="lotRays"></div>
+    <div class="lot-ab r" id="lotAbR"></div>
+    <div class="lot-ab c" id="lotAbC"></div>
+    <div class="lot-flash" id="lotFlash"></div>
+    <div class="lot-bar top" id="lotBarTop"></div>
+    <div class="lot-bar bot" id="lotBarBot"></div>
+  </div>
+  <div class="lot-stage-layer" id="lotStageLayer"></div>
+  <div class="killfeed" id="killfeed" aria-live="polite"></div>
+
+  <!-- 抽獎底部抽屜 -->
+  <div class="lot-sheet" id="lotSheet" onclick="LOT.closeSheet(event)">
+    <div class="lot-sheet-card" onclick="event.stopPropagation()">
+      <div class="lot-sheet-grab"></div>
+      <div class="lot-sheet-head">
+        <h3 id="lotSheetTitle"></h3><em id="lotSheetEn"></em>
+        <button class="lot-icon-btn lot-sheet-x" onclick="LOT.closeSheet()" aria-label="關閉">✕</button>
+      </div>
+      <div class="lot-sheet-body" id="lotSheetBody"></div>
+    </div>
+  </div>
+
+  <!-- 底部分頁列 -->
+  <nav class="tabbar" id="tabbar" hidden>
+    <span class="tabbar-ind" id="tabbarInd"></span>
+    <button class="tabbar-item" data-tab="landing" onclick="LOT.tab('landing')">
+      <svg class="tabbar-ico" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5v-5.5h-6V20H4z"/></svg>
+      <span class="tabbar-lab">首頁</span>
+    </button>
+    <button class="tabbar-item" data-tab="lottery" onclick="LOT.tab('lottery')">
+      <svg class="tabbar-ico" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="2.6"/>
+        <path d="M12 3.8v2.4M12 17.8v2.4M3.8 12h2.4M17.8 12h2.4"/>
+      </svg>
+      <span class="tabbar-lab">抽獎</span>
+      <span class="tabbar-dot" id="tabDotLottery"></span>
+    </button>
+    <button class="tabbar-item" data-tab="historyLog" onclick="LOT.tab('historyLog')">
+      <svg class="tabbar-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.2V12l3.2 2"/></svg>
+      <span class="tabbar-lab">紀錄</span>
+    </button>
+  </nav>
 </div>
 
 <script>
@@ -1416,7 +1972,7 @@
   document.getElementById('parentBrandTag').innerHTML = parentBrandMarkup();
 
   // ---------- 畫面切換 ----------
-  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', policies:'畫面 · 服務條款與政策', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 導向藍新金流付款', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
+  const stageNames = { landing:'畫面 1 / 10 · 首頁', historyLog:'畫面 · 分析紀錄', lottery:'畫面 · 抽獎（命運籤）', policies:'畫面 · 服務條款與政策', upload:'畫面 2 / 10 · 上傳對話', loading:'畫面 3 / 10 · 分析中', reveal:'畫面 4-5 / 10 · 翻牌 / 結果', payment:'畫面 6 / 10 · 付款確認', npay:'畫面 7 / 10 · 導向藍新金流付款', aiAsk:'畫面 8 / 10 · AI 主動提問', relResult:'畫面 9-10 / 10 · 雙人關係報告' };
   function goTo(name){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.querySelector('[data-screen="'+name+'"]').classList.add('active');
@@ -1424,6 +1980,7 @@
     if(name==='loading') runLoading();
     if(name==='landing') renderTypesCarousel();
     if(name==='historyLog') renderHistoryLog();
+    if(window.__lotSync) window.__lotSync(name); // 同步底部分頁列（抽獎分頁）
   }
 
   // ---------- 人格牌資料 ----------
@@ -2676,6 +3233,1108 @@
     enterPaidUploadMode();
     goTo('upload');
   }
+
+  /* ============================================================
+     抽獎分頁：命運籤（介面展示用，全部在前端跑）
+     ------------------------------------------------------------
+     這一段刻意寫成獨立模組（LOT），不動到上面既有的分析流程。
+     只有 goTo() 多加一行 LOT.syncTabs()，讓底部分頁列跟著切。
+     ============================================================ */
+  const LOT = (function(){
+  'use strict';
+
+  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = id => document.getElementById(id);
+  const frameEl = $('frame');
+
+  /* ---------- 音效：全部用 WebAudio 現場合成，不載任何音檔 ---------- */
+  const SFX = (function(){
+    let ctx = null, master = null, muted = false;
+    function ensure(){
+      if(!ctx){
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if(!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = 0.5;
+        master.connect(ctx.destination);
+      }
+      if(ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    }
+    function noiseBuffer(sec){
+      const n = Math.floor(ctx.sampleRate * sec);
+      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
+      return buf;
+    }
+    function env(node, t0, peak, attack, decay){
+      const g = node.gain;
+      g.setValueAtTime(0.0001, t0);
+      g.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0+attack);
+      g.exponentialRampToValueAtTime(0.0001, t0+attack+decay);
+    }
+    function tone(type, f0, f1, dur, peak, when){
+      if(muted || !ensure()) return;
+      const t0 = ctx.currentTime + (when||0);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t0);
+      if(f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0+dur);
+      env(g, t0, peak, 0.006, dur);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0+dur+0.05);
+    }
+    return {
+      get muted(){ return muted; },
+      setMuted(v){ muted = v; if(master) master.gain.value = v ? 0 : 0.5; },
+      unlock(){ ensure(); },
+      click(){ tone('square', 760, 620, 0.045, 0.035); },
+      soft(){ tone('sine', 420, 300, 0.09, 0.05); },
+      denied(){ tone('square', 150, 110, 0.09, 0.06); tone('square', 110, 80, 0.12, 0.06, 0.1); },
+      /* 蓄力：鋸齒波爬升 + 低通掃頻，放開時 stop() */
+      charge(){
+        if(muted || !ensure()) return { stop(){}, };
+        const t0 = ctx.currentTime;
+        const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(52, t0);
+        o.frequency.exponentialRampToValueAtTime(330, t0+1.15);
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(240, t0);
+        lp.frequency.exponentialRampToValueAtTime(2600, t0+1.15);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.11, t0+1.0);
+        o.connect(lp); lp.connect(g); g.connect(master);
+        o.start(t0);
+        return { stop(){
+          const t = ctx.currentTime;
+          g.gain.cancelScheduledValues(t);
+          g.gain.setValueAtTime(Math.max(g.gain.value, 0.0002), t);
+          g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+          o.stop(t+0.12);
+        } };
+      },
+      /* 撞擊：噪音爆 + 下墜正弦，power 0~1 */
+      impact(power){
+        if(muted || !ensure()) return;
+        power = power == null ? 1 : power;
+        const t0 = ctx.currentTime;
+        const src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.4);
+        const lp = ctx.createBiquadFilter(); lp.type='lowpass';
+        lp.frequency.setValueAtTime(2400, t0);
+        lp.frequency.exponentialRampToValueAtTime(160, t0+0.26);
+        const g = ctx.createGain(); env(g, t0, 0.34*power, 0.004, 0.3);
+        src.connect(lp); lp.connect(g); g.connect(master);
+        src.start(t0); src.stop(t0+0.42);
+        tone('sine', 170, 42, 0.3, 0.4*power);
+      },
+      tick(i){ tone('triangle', 430*Math.pow(1.055, i||0), null, 0.055, 0.055); },
+      /* 稀有度音：三度堆疊的鐘聲，越稀有起音越高、殘響越長 */
+      chime(tierIdx){
+        if(muted || !ensure()) return;
+        const roots = [392, 523.25, 659.25, 784];
+        const decays = [0.7, 1.0, 1.5, 2.4];
+        const root = roots[tierIdx] || 392, dec = decays[tierIdx] || 0.7;
+        [1, 1.5, 2, 3].slice(0, tierIdx >= 2 ? 4 : 3).forEach((mul, i) => {
+          tone('sine', root*mul, root*mul*0.995, dec*(1 - i*0.12), 0.11/(i+1), i*0.018);
+        });
+      },
+      /* 傳說前的倒吸氣：噪音由小變大（反向 swell） */
+      swell(sec){
+        if(muted || !ensure()) return;
+        const t0 = ctx.currentTime;
+        const src = ctx.createBufferSource(); src.buffer = noiseBuffer(sec+0.2);
+        const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=1.4;
+        bp.frequency.setValueAtTime(300, t0);
+        bp.frequency.exponentialRampToValueAtTime(5200, t0+sec);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.16, t0+sec);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+sec+0.14);
+        src.connect(bp); bp.connect(g); g.connect(master);
+        src.start(t0); src.stop(t0+sec+0.2);
+        tone('sawtooth', 70, 420, sec, 0.06);
+      },
+      fanfare(){
+        if(muted || !ensure()) return;
+        [0, 4, 7, 11, 12].forEach((st, i) => {
+          tone('sine', 392*Math.pow(2, st/12), null, 1.6-i*0.1, 0.09, i*0.055);
+          tone('triangle', 196*Math.pow(2, st/12), null, 1.2, 0.05, i*0.055);
+        });
+      },
+    };
+  })();
+
+  /* ---------- 特效工具 ---------- */
+  const anims = new Set();          // 追蹤自己開的 WAAPI 動畫，跳過時要能一次收掉
+  const waiters = new Set();        // 追蹤 pending 的 wait()
+  let skipFlag = false;
+
+  function animate(el, frames, opts){
+    const a = el.animate(frames, opts);
+    anims.add(a);
+    a.finished.catch(()=>{}).finally(()=> anims.delete(a));
+    return a;
+  }
+  function wait(ms){
+    if(skipFlag) return Promise.resolve();
+    return new Promise(res => {
+      const done = () => { clearTimeout(t); waiters.delete(done); res(); };
+      const t = setTimeout(done, ms);
+      waiters.add(done);
+    });
+  }
+  function skipAll(){
+    skipFlag = true;
+    anims.forEach(a => { try{ a.finish(); }catch(e){} });
+    anims.clear();
+    waiters.forEach(f => f());
+    waiters.clear();
+  }
+  function resetSkip(){ skipFlag = false; }
+
+  /* 頓幀（hit stop）：命中瞬間讓整個畫面凍住幾十毫秒，是打擊感的來源 */
+  async function hitstop(ms){
+    if(REDUCED || skipFlag) return;
+    const paused = [];
+    if(document.getAnimations){
+      document.getAnimations().forEach(a => {
+        if(a.playState === 'running'){ try{ a.pause(); paused.push(a); }catch(e){} }
+      });
+    }
+    frameEl.classList.add('lot-freeze');
+    await new Promise(r => setTimeout(r, ms));
+    frameEl.classList.remove('lot-freeze');
+    paused.forEach(a => { try{ a.play(); }catch(e){} });
+  }
+
+  /* 震屏：振幅隨時間平方衰減，另外加一點旋轉，比純位移更有重量 */
+  function shake(el, power, dur){
+    if(!el) return Promise.resolve();
+    if(REDUCED || skipFlag){ el.style.transform=''; return Promise.resolve(); }
+    return new Promise(res => {
+      const t0 = performance.now();
+      (function step(now){
+        const k = (now - t0) / dur;
+        if(k >= 1 || skipFlag){ el.style.transform=''; res(); return; }
+        const d = (1-k)*(1-k)*power;
+        el.style.transform = 'translate(' + ((Math.random()*2-1)*d).toFixed(2) + 'px,' +
+          ((Math.random()*2-1)*d).toFixed(2) + 'px) rotate(' + ((Math.random()*2-1)*d*0.11).toFixed(3) + 'deg)';
+        requestAnimationFrame(step);
+      })(t0);
+    });
+  }
+  function rumble(pattern){ try{ navigator.vibrate && navigator.vibrate(pattern); }catch(e){} }
+
+  function flash(alpha, ms, color){
+    if(REDUCED) return;
+    const el = $('lotFlash');
+    el.style.background = color || '#fff';
+    animate(el, [{opacity:alpha}, {opacity:0}], {duration:ms, easing:'cubic-bezier(.1,.6,.3,1)'});
+  }
+  /* 色差：紅／青兩層往反方向甩出去再收回，模擬鏡頭衝擊 */
+  function aberrate(ms){
+    if(REDUCED) return;
+    const r = $('lotAbR'), c = $('lotAbC');
+    animate(r, [{opacity:.5, transform:'translateX(-7px)'}, {opacity:0, transform:'translateX(0)'}], {duration:ms, easing:'ease-out'});
+    animate(c, [{opacity:.45, transform:'translateX(7px)'}, {opacity:0, transform:'translateX(0)'}], {duration:ms, easing:'ease-out'});
+  }
+  function letterbox(on){
+    const t = $('lotBarTop'), b = $('lotBarBot');
+    const to = on ? 1 : 0;
+    [t,b].forEach(el => animate(el, [{transform:'scaleY('+(on?0:1)+')'}, {transform:'scaleY('+to+')'}],
+      {duration: on?420:300, easing:'cubic-bezier(.2,.9,.25,1)', fill:'forwards'}));
+  }
+
+  function centerOf(el){
+    const r = el.getBoundingClientRect(), f = frameEl.getBoundingClientRect();
+    return { x: r.left - f.left + r.width/2, y: r.top - f.top + r.height/2 };
+  }
+  /* 火花：從一點炸開，帶重力與旋轉；shard 用細長方塊，比圓點更銳 */
+  function burst(x, y, n, color, opts){
+    if(REDUCED) return;
+    opts = opts || {};
+    const layer = $('lotFx');
+    for(let i=0;i<n;i++){
+      const p = document.createElement('span');
+      const long = opts.shard && i % 3 === 0;
+      p.className = long ? 'lot-shard' : 'lot-spark';
+      const size = long ? 0 : (2 + Math.random()*(opts.size||3));
+      if(long){
+        p.style.width = (2+Math.random()*2)+'px';
+        p.style.height = (9+Math.random()*13)+'px';
+        p.style.background = 'linear-gradient(180deg,'+color+', transparent)';
+      }else{
+        p.style.width = p.style.height = size+'px';
+        p.style.background = color;
+        p.style.boxShadow = '0 0 '+(4+size*2)+'px '+color;
+      }
+      p.style.left = x+'px'; p.style.top = y+'px';
+      layer.appendChild(p);
+      const ang = Math.random()*Math.PI*2;
+      const dist = (opts.dist||60) * (0.35 + Math.random());
+      const dx = Math.cos(ang)*dist, dy = Math.sin(ang)*dist;
+      const dur = (opts.dur||620) * (0.7 + Math.random()*0.6);
+      const a = animate(p, [
+        { transform:'translate(-50%,-50%) translate(0,0) rotate(0deg)', opacity:1 },
+        { transform:'translate(-50%,-50%) translate('+dx*0.7+'px,'+(dy*0.7-8)+'px) rotate('+(dx)+'deg)', opacity:1, offset:0.45 },
+        { transform:'translate(-50%,-50%) translate('+dx+'px,'+(dy+42)+'px) rotate('+(dx*1.6)+'deg)', opacity:0 }
+      ], { duration:dur, easing:'cubic-bezier(.15,.7,.3,1)' });
+      a.finished.catch(()=>{}).finally(()=> p.remove());
+    }
+  }
+  /* 內縮吸入：蓄力時把光點吸向核心 */
+  function implode(x, y, n, color){
+    if(REDUCED) return;
+    const layer = $('lotFx');
+    for(let i=0;i<n;i++){
+      const p = document.createElement('span');
+      p.className = 'lot-spark';
+      const s = 2+Math.random()*2.5;
+      p.style.width = p.style.height = s+'px';
+      p.style.background = color;
+      p.style.boxShadow = '0 0 8px '+color;
+      p.style.left = x+'px'; p.style.top = y+'px';
+      layer.appendChild(p);
+      const ang = Math.random()*Math.PI*2, dist = 70+Math.random()*90;
+      const a = animate(p, [
+        { transform:'translate(-50%,-50%) translate('+Math.cos(ang)*dist+'px,'+Math.sin(ang)*dist+'px) scale(.4)', opacity:0 },
+        { transform:'translate(-50%,-50%) translate('+Math.cos(ang)*dist*0.45+'px,'+Math.sin(ang)*dist*0.45+'px) scale(1)', opacity:1, offset:0.55 },
+        { transform:'translate(-50%,-50%) translate(0,0) scale(.2)', opacity:0 }
+      ], { duration: 520+Math.random()*260, easing:'cubic-bezier(.4,0,.2,1)' });
+      a.finished.catch(()=>{}).finally(()=> p.remove());
+    }
+  }
+  function shockwave(x, y, color, size, ms){
+    if(REDUCED) return;
+    const w = document.createElement('span');
+    w.className = 'lot-wave';
+    w.style.color = color;
+    w.style.left = x+'px'; w.style.top = y+'px';
+    w.style.width = w.style.height = '10px';
+    $('lotFx').appendChild(w);
+    const a = animate(w, [
+      { transform:'translate(-50%,-50%) scale(.2)', opacity:.9, borderWidth:'3px' },
+      { transform:'translate(-50%,-50%) scale('+(size/10)+')', opacity:0, borderWidth:'1px' }
+    ], { duration: ms||700, easing:'cubic-bezier(.15,.75,.25,1)' });
+    a.finished.catch(()=>{}).finally(()=> w.remove());
+  }
+  function floatText(x, y, text, color){
+    const el = document.createElement('span');
+    el.className = 'lot-float';
+    el.textContent = text;
+    el.style.color = color;
+    el.style.left = x+'px'; el.style.top = y+'px';
+    $('lotFx').appendChild(el);
+    const drift = (Math.random()*2-1)*26;
+    const a = animate(el, [
+      { transform:'translate(-50%,-50%) translateY(6px) scale(.7)', opacity:0 },
+      { transform:'translate(-50%,-50%) translateY(-14px) scale(1.12)', opacity:1, offset:0.22 },
+      { transform:'translate(-50%,-50%) translate('+drift+'px,-56px) scale(1)', opacity:0 }
+    ], { duration: 1150, easing:'cubic-bezier(.2,.8,.3,1)' });
+    a.finished.catch(()=>{}).finally(()=> el.remove());
+  }
+  /* 數字滾動：資源變動用跳動的方式收斂，比直接改數字有感 */
+  function rollNumber(el, from, to, ms){
+    const t0 = performance.now();
+    (function step(now){
+      const k = Math.min(1, (now-t0)/ms);
+      const e = 1 - Math.pow(1-k, 3);
+      el.textContent = Math.round(from + (to-from)*e).toLocaleString();
+      if(k < 1) requestAnimationFrame(step);
+    })(t0);
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+
+  /* ---------- Killfeed：右側硬切進場的擊殺提示條 ---------- */
+  let chainCount = 0, chainTimer = null, chainEl = null;
+  function killfeed(tier, name, gain){
+    const feed = $('killfeed');
+    const row = document.createElement('div');
+    row.className = 'kf';
+    row.style.color = tier.color;
+    row.innerHTML = '<span class="kf-tier">'+tier.en+'</span>' +
+      '<span class="kf-body"><span class="kf-name">'+name+'</span>' +
+      (gain ? '<span class="kf-gain">+'+gain+'</span>' : '') + '</span>';
+    feed.appendChild(row);
+    while(feed.querySelectorAll('.kf').length > 5) feed.querySelector('.kf').remove();
+    animate(row, [
+      { transform:'translateX(102%)' },
+      { transform:'translateX(-6px)', offset:0.62 },
+      { transform:'translateX(0)' }
+    ], { duration:220, easing:'cubic-bezier(.1,.85,.2,1)', fill:'forwards' });
+    setTimeout(() => {
+      const out = row.animate([{transform:'translateX(0)', opacity:1}, {transform:'translateX(102%)', opacity:.2}],
+        {duration:200, easing:'cubic-bezier(.6,0,.9,.4)', fill:'forwards'});
+      out.finished.catch(()=>{}).finally(()=> row.remove());
+    }, 2800);
+
+    // 連段：短時間內連續掉落會疊加 CHAIN，音高跟著往上爬
+    chainCount++;
+    if(chainCount >= 2){
+      if(!chainEl){
+        chainEl = document.createElement('div');
+        chainEl.className = 'kf-chain';
+        feed.appendChild(chainEl);
+      }
+      feed.appendChild(chainEl);
+      chainEl.textContent = '×' + chainCount + ' CHAIN';
+      animate(chainEl, [
+        { transform:'translateX(102%) scale(1)' },
+        { transform:'translateX(0) scale(1.18)', offset:0.5 },
+        { transform:'translateX(0) scale(1)' }
+      ], { duration:260, easing:'cubic-bezier(.2,1.5,.4,1)', fill:'forwards' });
+      SFX.tick(Math.min(chainCount*2, 18));
+    }
+    clearTimeout(chainTimer);
+    chainTimer = setTimeout(() => {
+      chainCount = 0;
+      if(chainEl){
+        const el = chainEl; chainEl = null;
+        el.animate([{opacity:1},{opacity:0}], {duration:240, fill:'forwards'})
+          .finished.catch(()=>{}).finally(()=> el.remove());
+      }
+    }, 1600);
+  }
+
+  /* ---------- 獎品資料 ---------- */
+  const TIERS = [
+    { id:'common', name:'微光', en:'GLIMMER', color:'#9a92b8', rate:0.720, shards:30,  exchange:150,  power:0.5 },
+    { id:'rare',   name:'銀霜', en:'FROST',   color:'#6ecff2', rate:0.222, shards:90,  exchange:420,  power:0.8 },
+    { id:'epic',   name:'金焰', en:'EMBER',   color:'#ffae43', rate:0.050, shards:240, exchange:980,  power:1.15 },
+    { id:'legend', name:'星蝕', en:'ECLIPSE', color:'#ff5f86', rate:0.008, shards:700, exchange:2400, power:1.6 },
+  ];
+  const T = {}; TIERS.forEach((t,i) => { t.idx = i; T[t.id] = t; });
+
+  /* 圖示：現場畫的向量小圖，用 currentColor 吃稀有度顏色 */
+  const ART = {
+    locket: '<circle cx="24" cy="24" r="13"/><path d="M24 30c-4-3-6-5-6-7.6A3.4 3.4 0 0 1 24 20a3.4 3.4 0 0 1 6 2.4c0 2.6-2 4.6-6 7.6z"/><path d="M17 11h14"/>',
+    eclipse:'<circle cx="24" cy="24" r="12"/><path d="M31 15a12 12 0 0 0 0 18 11 11 0 0 1 0-18z" fill="currentColor" stroke="none"/><path d="M24 4v4M24 40v4M4 24h4M40 24h4M10 10l3 3M35 35l3 3M38 10l-3 3M13 35l-3 3"/>',
+    quill:  '<path d="M12 36c0-12 8-22 22-24-1 14-9 22-22 24z"/><path d="M12 36l9-9"/><path d="M14 40h20"/>',
+    scroll: '<rect x="12" y="10" width="24" height="28" rx="3"/><path d="M18 18h12M18 24h12M18 30h7"/>',
+    ember:  '<path d="M24 8c7 8 11 12 11 19a11 11 0 0 1-22 0c0-4 2-7 5-11 1 3 2 4 4 5-1-5 0-9 2-13z"/>',
+    frost:  '<path d="M24 7v34M9.3 15.5l29.4 17M38.7 15.5l-29.4 17"/><path d="M20 11l4 3 4-3M20 37l4-3 4 3"/>',
+    dust:   '<path d="M24 9l3.2 9.6L37 22l-9.8 3.4L24 35l-3.2-9.6L11 22l9.8-3.4z"/><circle cx="35" cy="12" r="1.8"/><circle cx="13" cy="34" r="1.4"/>',
+    omen:   '<rect x="14" y="7" width="20" height="34" rx="4"/><path d="M24 15l2.2 5.6L32 22l-5.8 1.6L24 29l-2.2-5.4L16 22l5.8-1.4z"/>',
+    ring:   '<circle cx="24" cy="24" r="14"/><circle cx="24" cy="24" r="8"/><path d="M24 6v4M24 38v4"/>',
+  };
+  function artSvg(key, size){
+    return '<svg viewBox="0 0 48 48" width="'+size+'" height="'+size+'" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + (ART[key]||ART.dust) + '</svg>';
+  }
+
+  const POOL = [
+    { id:'rep',    tier:'legend', art:'locket',  name:'關係報告 兌換券',   desc:'免費解鎖一次 NT$99 的深度報告' },
+    { id:'backEc', tier:'legend', art:'eclipse', name:'星蝕 · 限定卡背',     desc:'人格卡換上會日蝕的牌背' },
+    { id:'ask3',   tier:'epic',   art:'quill',   name:'AI 追問 ×3',          desc:'報告裡多三次追問機會' },
+    { id:'word10', tier:'epic',   art:'scroll',  name:'字數上限 +100,000',   desc:'單次分析可讀更長的對話' },
+    { id:'backEm', tier:'epic',   art:'ember',   name:'金焰 · 限定卡背',     desc:'燒起來的牌背，會微微流動' },
+    { id:'word3',  tier:'rare',   art:'scroll',  name:'字數上限 +30,000',    desc:'加長一點分析長度' },
+    { id:'frame',  tier:'rare',   art:'frost',   name:'銀霜 · 卡片外框',     desc:'分享卡加上霜紋邊框' },
+    { id:'dust120',tier:'rare',   art:'dust',    name:'星塵 ×120',           desc:'可在圖鑑兌換想要的獎品' },
+    { id:'omen',   tier:'common', art:'omen',    name:'今日運勢籤',          desc:'一句話的今日聊天提醒' },
+    { id:'dust30', tier:'common', art:'dust',    name:'星塵 ×30',            desc:'小額星塵' },
+    { id:'ringC',  tier:'common', art:'ring',    name:'微光 · 卡片外框',     desc:'素一點的邊框，很耐看' },
+  ];
+  const byTier = id => POOL.filter(p => p.tier === id);
+
+  /* ---------- 狀態（只存在這台裝置的瀏覽器） ---------- */
+  const KEY = 'cp_lottery_v1';
+  const TICKET_CAP = 10, REGEN_MS = 3*60*1000, PITY_MAX = 70, SOFT_PITY = 55;
+  const DEFAULT_STATE = { tickets:12, shards:260, pity:0, lastRegen:Date.now(), owned:{}, log:[], muted:false, pulls:0 };
+  let S = Object.assign({}, DEFAULT_STATE);
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(raw) S = Object.assign({}, DEFAULT_STATE, JSON.parse(raw));
+    }catch(e){ /* 無痕模式或被擋就用預設值，不影響操作 */ }
+    if(!S.owned) S.owned = {};
+    if(!Array.isArray(S.log)) S.log = [];
+    regen();
+  }
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  }
+  /* 籤會隨時間回復，離開頁面的期間也算，所以用時間戳回推 */
+  function regen(){
+    const now = Date.now();
+    if(S.tickets >= TICKET_CAP){ S.lastRegen = now; return; }
+    const gained = Math.floor((now - S.lastRegen) / REGEN_MS);
+    if(gained > 0){
+      S.tickets = Math.min(TICKET_CAP, S.tickets + gained);
+      S.lastRegen = S.tickets >= TICKET_CAP ? now : S.lastRegen + gained*REGEN_MS;
+    }
+  }
+
+  /* ---------- 抽籤邏輯 ---------- */
+  function rollTier(){
+    S.pity++;
+    if(S.pity >= PITY_MAX) return T.legend;                    // 硬保底
+    let legendRate = T.legend.rate;
+    if(S.pity > SOFT_PITY) legendRate += (S.pity - SOFT_PITY) * 0.06;  // 軟保底往上爬
+    const r = Math.random();
+    if(r < legendRate) return T.legend;
+    if(r < legendRate + T.epic.rate) return T.epic;
+    if(r < legendRate + T.epic.rate + T.rare.rate) return T.rare;
+    return T.common;
+  }
+  function pullOne(){
+    const tier = rollTier();
+    if(tier.id === 'legend') S.pity = 0;
+    const list = byTier(tier.id);
+    const item = list[Math.floor(Math.random()*list.length)];
+    const isNew = !S.owned[item.id];
+    S.owned[item.id] = (S.owned[item.id] || 0) + 1;
+    const gain = isNew ? tier.shards : Math.round(tier.shards * 0.6);   // 重複的折成星塵
+    S.shards += gain;
+    S.pulls++;
+    S.log.unshift({ id:item.id, t:tier.id, ts:Date.now(), n:isNew });
+    if(S.log.length > 60) S.log.length = 60;
+    return { item, tier, isNew, gain };
+  }
+  function pullMany(n){
+    const out = [];
+    for(let i=0;i<n;i++) out.push(pullOne());
+    // 十連保底：沒有金焰以上就把其中一張升級
+    if(n >= 10 && !out.some(r => T[r.tier.id].idx >= 2)){
+      const i = Math.floor(Math.random()*out.length);
+      const list = byTier('epic');
+      const item = list[Math.floor(Math.random()*list.length)];
+      const old = out[i];
+      S.owned[old.item.id]--;
+      if(S.owned[old.item.id] <= 0) delete S.owned[old.item.id];
+      S.shards -= old.gain;
+      const isNew = !S.owned[item.id];
+      S.owned[item.id] = (S.owned[item.id] || 0) + 1;
+      const gain = isNew ? T.epic.shards : Math.round(T.epic.shards*0.6);
+      S.shards += gain;
+      const li = S.log.findIndex(l => l.id === old.item.id && l.t === old.tier.id);
+      if(li >= 0) S.log.splice(li, 1);
+      S.log.unshift({ id:item.id, t:'epic', ts:Date.now(), n:isNew });
+      out[i] = { item, tier:T.epic, isNew, gain, forced:true };
+    }
+    return out;
+  }
+
+  /* ---------- HUD ---------- */
+  let shownShards = null, shownTickets = null, tickTimer = null;
+
+  function fmtClock(ms){
+    const s = Math.max(0, Math.ceil(ms/1000));
+    return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+  }
+  function updateHud(animateNums){
+    regen();
+    const sEl = $('lotShards'), tEl = $('lotTickets');
+    if(animateNums && shownShards !== null && shownShards !== S.shards){
+      rollNumber(sEl, shownShards, S.shards, 620);
+    }else{
+      sEl.textContent = S.shards.toLocaleString();
+    }
+    if(animateNums && shownTickets !== null && shownTickets !== S.tickets){
+      tEl.classList.remove('bump'); void tEl.offsetWidth; tEl.classList.add('bump');
+    }
+    tEl.textContent = S.tickets;
+    shownShards = S.shards; shownTickets = S.tickets;
+
+    const pity = Math.min(S.pity, PITY_MAX);
+    $('lotPityNum').textContent = pity + ' / ' + PITY_MAX;
+    const fill = $('lotPityFill');
+    fill.style.width = (pity/PITY_MAX*100) + '%';
+    fill.classList.toggle('hot', S.pity >= SOFT_PITY);
+
+    $('lotBtn1').disabled = S.tickets < 1;
+    $('lotBtn10').disabled = S.tickets < 10;
+    $('lotCore').disabled = S.tickets < 1;
+    $('lotBtn10').querySelector('span').textContent = S.tickets < 10
+      ? ('還差 ' + (10 - S.tickets) + ' 籤') : '10 籤 · 保底金焰';
+    $('tabDotLottery').classList.toggle('on', S.tickets >= TICKET_CAP);
+    updateRegenRing();
+  }
+  function updateRegenRing(){
+    const arc = $('lotRegenArc'), label = $('lotRegenTime');
+    const C = 56.5;
+    if(S.tickets >= TICKET_CAP){
+      arc.style.strokeDashoffset = 0;
+      label.textContent = '已滿';
+      return;
+    }
+    const left = Math.max(0, REGEN_MS - (Date.now() - S.lastRegen));
+    const k = 1 - left/REGEN_MS;
+    arc.style.strokeDashoffset = C * (1-k);
+    label.textContent = '+1 ' + fmtClock(left);
+  }
+  function startTicking(){
+    stopTicking();
+    tickTimer = setInterval(() => {
+      const before = S.tickets;
+      regen();
+      if(S.tickets !== before){ save(); updateHud(true); SFX.soft(); }
+      else updateRegenRing();
+    }, 1000);
+  }
+  function stopTicking(){ if(tickTimer){ clearInterval(tickTimer); tickTimer = null; } }
+
+  /* ---------- 演出 ---------- */
+  const layerEl = () => $('lotStageLayer');
+  let busy = false, tapHandler = null;
+
+  function cinematic(on){
+    $('tabbar').classList.toggle('retracted', on);
+    $('lotShake').classList.toggle('dimmed', on);
+    $('lotVig').style.opacity = on ? 1 : 0;
+    layerEl().classList.toggle('on', on);
+    if(!on){
+      $('lotRays').style.opacity = 0;
+      letterbox(false);
+      $('lotSkip') && $('lotSkip').classList.remove('on');
+    }
+  }
+  function awaitTap(maxMs){
+    return new Promise(res => {
+      let done = false;
+      const fin = () => { if(done) return; done = true; clearTimeout(t); tapHandler = null; waiters.delete(fin); res(); };
+      const t = setTimeout(fin, maxMs);
+      tapHandler = fin;
+      waiters.add(fin);
+    });
+  }
+  function cardMarkup(res){
+    const t = res.tier;
+    return '<div class="lot-card" style="--cardline:' + t.color + '88; --cardaccent:' + t.color + ';">' +
+      (res.isNew ? '<span class="lot-card-new">NEW</span>' : '') +
+      '<span class="lot-card-rar">' + t.name + ' · ' + t.en + '</span>' +
+      '<span class="lot-card-art" style="color:' + t.color + '">' + artSvg(res.item.art, 82) + '</span>' +
+      '<div class="lot-card-name">' + res.item.name + '</div>' +
+      '<div class="lot-card-desc">' + res.item.desc + '</div>' +
+      '<div class="lot-card-dupe">' + (res.isNew ? '首次入手' : '重複 → 折算星塵') + ' +' + res.gain + ' ✦</div>' +
+    '</div>';
+  }
+
+  /* 一次完整的開籤演出：光球上升 → 依稀有度層層加碼 → 卡片砸下來 */
+  async function revealSequence(res, opts){
+    opts = opts || {};
+    const t = res.tier, idx = t.idx, charge = opts.charge == null ? 0.5 : opts.charge;
+    const layer = layerEl();
+    const wrap = document.createElement('div');
+    wrap.className = 'lot-reveal-wrap';
+    layer.appendChild(wrap);
+
+    const fr = frameEl.getBoundingClientRect();
+    const origin = opts.origin || { x: fr.width/2, y: fr.height*0.52 };
+    const target = { x: fr.width/2, y: fr.height*0.44 };
+
+    // 光球上升（低稀有度飛快，高稀有度慢慢吊人胃口）
+    if(!REDUCED && !skipFlag){
+      const orb = document.createElement('span');
+      orb.className = 'lot-spark';
+      orb.style.width = orb.style.height = '16px';
+      orb.style.background = t.color;
+      orb.style.boxShadow = '0 0 26px ' + t.color + ', 0 0 60px ' + t.color;
+      orb.style.left = origin.x + 'px'; orb.style.top = origin.y + 'px';
+      $('lotFx').appendChild(orb);
+      const rise = [500, 620, 780, 1000][idx];
+      const trail = setInterval(() => burst(target.x + (Math.random()*40-20), target.y + 40, 2, t.color, {dist:26, dur:420}), 70);
+      const a = animate(orb, [
+        { transform:'translate(-50%,-50%) scale(.3)', opacity:0 },
+        { transform:'translate(-50%,-50%) translate(' + (target.x-origin.x)*0.5 + 'px,' + (target.y-origin.y)*0.55 + 'px) scale(1.15)', opacity:1, offset:0.45 },
+        { transform:'translate(-50%,-50%) translate(' + (target.x-origin.x) + 'px,' + (target.y-origin.y) + 'px) scale(1)', opacity:1 }
+      ], { duration:rise, easing:'cubic-bezier(.3,.1,.2,1)', fill:'forwards' });
+      await wait(rise);
+      clearInterval(trail);
+      orb.remove();
+    }
+
+    // 稀有度加碼：金焰兩段脈衝，星蝕整個畫面被吃掉
+    if(idx === 2 && !skipFlag){
+      for(let i=0;i<2;i++){
+        SFX.tick(10 + i*6);
+        shockwave(target.x, target.y, t.color, 150 + i*60, 420);
+        flash(0.22, 130, t.color);
+        await hitstop(46);
+        await wait(150);
+      }
+      SFX.swell(0.45);
+      await wait(260);
+    }
+    if(idx === 3 && !skipFlag){
+      letterbox(true);
+      $('lotRays').style.transition = 'opacity .8s ease';
+      $('lotRays').style.opacity = 0.55;
+      SFX.swell(1.15);
+      rumble([12, 60, 12, 60, 20]);
+      for(let i=0;i<3;i++){
+        shockwave(target.x, target.y, i%2 ? '#ffde9f' : t.color, 120 + i*70, 460);
+        await hitstop(38);
+        await wait(190 - i*40);
+      }
+      await wait(220);
+      // 爆開
+      flash(0.95, 320);
+      aberrate(340);
+      SFX.impact(1);
+      SFX.fanfare();
+      rumble([40, 30, 90]);
+      burst(target.x, target.y, 54, t.color, { dist:180, shard:true, dur:900, size:4 });
+      burst(target.x, target.y, 26, '#ffde9f', { dist:120, dur:760 });
+      shockwave(target.x, target.y, '#fff', 420, 800);
+      await hitstop(130);
+      shake(frameEl, 16, 620);
+      shake($('lotShake'), 20, 700);
+
+      // 「星蝕」兩個字逐字砸下來
+      const word = document.createElement('div');
+      word.className = 'lot-legend-word';
+      word.innerHTML = t.name.split('').map(ch => '<i>' + ch + '</i>').join('');
+      wrap.appendChild(word);
+      Array.prototype.forEach.call(word.children, (ch, i) => {
+        animate(ch, [
+          { opacity:0, transform:'translateY(-30px) scale(1.6)' },
+          { opacity:1, transform:'translateY(4px) scale(.94)', offset:0.72 },
+          { opacity:1, transform:'translateY(0) scale(1)' }
+        ], { duration:420, delay:i*110, easing:'cubic-bezier(.2,1.4,.4,1)', fill:'forwards' });
+      });
+      await wait(520);
+    }
+
+    // 卡片砸下
+    const holder = document.createElement('div');
+    holder.innerHTML = cardMarkup(res);
+    const card = holder.firstChild;
+    wrap.appendChild(card);
+    SFX.chime(idx);
+    if(idx >= 2) SFX.impact(t.power * 0.6);
+    if(!REDUCED && !skipFlag){
+      animate(card, [
+        { opacity:0, transform:'scale(' + (1.5 + idx*0.12) + ') rotate(' + (idx%2?3:-3) + 'deg)' },
+        { opacity:1, transform:'scale(.965) rotate(0deg)', offset:0.66 },
+        { opacity:1, transform:'scale(1)' }
+      ], { duration:380, easing:'cubic-bezier(.2,1.25,.4,1)' });
+      await wait(250);
+      await hitstop(idx >= 2 ? 60 : 34);
+      shockwave(target.x, target.y, t.color, 260, 620);
+      burst(target.x, target.y + 90, 14 + idx*8, t.color, { dist:70, dur:640 });
+      shake($('lotShake'), 5 + idx*4, 240 + idx*60);
+      card.classList.add('sweep');
+      rumble(idx >= 2 ? [18, 40, 26] : 14);
+    }else{
+      card.style.opacity = 1;
+    }
+
+    const tag = document.createElement('div');
+    tag.className = 'lot-tier-tag';
+    tag.style.setProperty('--cardaccent', t.color);
+    tag.textContent = res.forced ? '十連保底' : (res.isNew ? 'NEW ENTRY' : 'DUPLICATE · 折算星塵');
+    wrap.appendChild(tag);
+    animate(tag, [{opacity:0}, {opacity:.85}], {duration:280, delay:120, fill:'forwards'});
+
+    // 十連時這張在格子階段已經播過 killfeed 了，不要重複刷一條
+    if(!opts.noFeed) killfeed(t, res.item.name, res.gain);
+    floatText(fr.width/2 + 68, fr.height*0.44 - 60, '+' + res.gain + ' ✦', t.color);
+    return wrap;
+  }
+
+  /* ---------- 單抽 ---------- */
+  async function drawSingle(charge){
+    if(busy) return;
+    regen();
+    if(S.tickets < 1){ noTickets(); return; }
+    busy = true; resetSkip();
+    S.tickets--; S.lastRegen = S.tickets === TICKET_CAP-1 ? Date.now() : S.lastRegen;
+    const res = pullOne();
+    save();
+    updateHud(false);
+
+    const core = $('lotCore');
+    const c = centerOf(core);
+    SFX.impact(0.55 + charge*0.45);
+    burst(c.x, c.y, 18 + Math.round(charge*26), '#ffde9f', { dist:80 + charge*70, shard:charge>0.6, dur:700 });
+    shockwave(c.x, c.y, '#e9c281', 200 + charge*160, 620);
+    flash(0.32 + charge*0.3, 200);
+    aberrate(240);
+    rumble(charge > 0.9 ? [26, 30, 40] : 20);
+    shake($('lotShake'), 7 + charge*9, 320);
+    await hitstop(52);
+
+    cinematic(true);
+    layerEl().innerHTML = '<span class="lot-skip" id="lotSkip">TAP 跳過</span>';
+    tapHandler = () => { skipAll(); };
+    setTimeout(() => { const s = $('lotSkip'); if(s && busy) s.classList.add('on'); }, 520);
+
+    await revealSequence(res, { origin:c, charge:charge });
+    await finishReveal();
+  }
+
+  /* ---------- 十連 ---------- */
+  async function drawTen(){
+    if(busy) return;
+    regen();
+    if(S.tickets < 10){ noTickets(); return; }
+    busy = true; resetSkip();
+    S.tickets -= 10; S.lastRegen = Date.now();
+    const results = pullMany(10);
+    save();
+    updateHud(false);
+
+    // 最好的一張留到最後，節奏才有終點
+    let bestI = 0;
+    results.forEach((r, i) => { if(r.tier.idx >= results[bestI].tier.idx) bestI = i; });
+    const best = results.splice(bestI, 1)[0];
+    results.push(best);
+
+    const c = centerOf($('lotCore'));
+    SFX.impact(1);
+    burst(c.x, c.y, 40, '#ffde9f', { dist:150, shard:true, dur:820, size:4 });
+    shockwave(c.x, c.y, '#e9c281', 320, 700);
+    flash(0.6, 240); aberrate(300);
+    shake($('lotShake'), 16, 460);
+    rumble([30, 40, 30]);
+    await hitstop(70);
+
+    cinematic(true);
+    const layer = layerEl();
+    layer.innerHTML = '<span class="lot-skip" id="lotSkip">TAP 跳過</span>' +
+      '<div class="lot-grid-title">TEN DRAW · 十連</div>' +
+      '<div class="lot-grid" id="lotGrid"></div>' +
+      '<div class="lot-grid-sum" id="lotSum"></div>' +
+      '<div class="lot-cont" id="lotCont">輕觸繼續</div>';
+    tapHandler = () => { skipAll(); };
+    setTimeout(() => { const s = $('lotSkip'); if(s && busy) s.classList.add('on'); }, 400);
+
+    const grid = $('lotGrid');
+    results.forEach(() => {
+      const slot = document.createElement('div');
+      slot.className = 'lot-slot';
+      grid.appendChild(slot);
+    });
+
+    for(let i=0;i<results.length;i++){
+      const r = results[i], slot = grid.children[i];
+      slot.style.color = r.tier.color;
+      slot.innerHTML = artSvg(r.item.art, 40) + '<span class="bar"></span>';
+      slot.style.opacity = 1; slot.style.transform = 'none';
+      if(r.tier.idx >= 1) slot.classList.add('hi');
+      if(!REDUCED && !skipFlag){
+        animate(slot, [
+          { opacity:0, transform:'scale(1.8) rotate(-7deg)' },
+          { opacity:1, transform:'scale(.92)', offset:0.65 },
+          { opacity:1, transform:'scale(1)' }
+        ], { duration:260, easing:'cubic-bezier(.2,1.4,.4,1)' });
+      }
+      SFX.tick(i * 1.6);
+      if(r.tier.idx >= 1){
+        const p = centerOf(slot);
+        burst(p.x, p.y, 6 + r.tier.idx*6, r.tier.color, { dist:40, dur:520 });
+      }
+      if(r.tier.idx >= 2){
+        killfeed(r.tier, r.item.name, r.gain);
+        flash(0.18, 120, r.tier.color);
+        shake($('lotShake'), 5, 180);
+        await hitstop(40);
+      }
+      await wait(i === results.length-1 ? 0 : 95);
+    }
+    await wait(240);
+
+    // 最後一張夠稀有就再給一段完整演出
+    if(best.tier.idx >= 2){
+      const slot = grid.children[grid.children.length-1];
+      const from = centerOf(slot);
+      animate(grid, [{opacity:1},{opacity:.1}], {duration:260, fill:'forwards'});
+      animate($('lotGrid').previousElementSibling, [{opacity:1},{opacity:0}], {duration:200, fill:'forwards'});
+      const wrap = await revealSequence(best, { origin:from, charge:1, noFeed:true });
+      await awaitTap(7000);
+      resetSkip();
+      wrap.remove();
+      animate(grid, [{opacity:.1},{opacity:1}], {duration:260, fill:'forwards'});
+      cinematic(true);
+      $('lotRays').style.opacity = 0;
+      letterbox(false);
+    }else{
+      SFX.chime(best.tier.idx);
+    }
+
+    // 結算
+    const counts = {};
+    results.forEach(r => counts[r.tier.id] = (counts[r.tier.id]||0)+1);
+    const totalGain = results.reduce((a,r) => a + r.gain, 0);
+    const newCount = results.filter(r => r.isNew).length;
+    $('lotSum').innerHTML = TIERS.slice().reverse().filter(t => counts[t.id])
+      .map(t => '<span class="lot-sum-chip" style="color:'+t.color+'">'+t.name+' ×'+counts[t.id]+'</span>').join('') +
+      '<span class="lot-sum-chip" style="color:var(--lot-gold)">星塵 +'+totalGain+'</span>' +
+      (newCount ? '<span class="lot-sum-chip" style="color:#fff">新入手 '+newCount+'</span>' : '');
+    animate($('lotSum'), [{opacity:0, transform:'translateY(8px)'}, {opacity:1, transform:'none'}],
+      {duration:320, easing:'cubic-bezier(.2,.9,.3,1)', fill:'forwards'});
+    floatText(frameEl.getBoundingClientRect().width/2, frameEl.getBoundingClientRect().height*0.3,
+      '+' + totalGain + ' ✦', '#e9c281');
+    await finishReveal();
+  }
+
+  async function finishReveal(){
+    const cont = $('lotCont') || (() => {
+      const el = document.createElement('div');
+      el.className = 'lot-cont';
+      el.textContent = '輕觸繼續';
+      layerEl().appendChild(el);
+      return el;
+    })();
+    await wait(360);
+    resetSkip();
+    cont.classList.add('on');
+    const s = $('lotSkip'); if(s) s.classList.remove('on');
+    await awaitTap(9000);
+    SFX.soft();
+    cinematic(false);
+    layerEl().innerHTML = '';
+    frameEl.style.transform = '';
+    $('lotShake').style.transform = '';
+    busy = false;
+    updateHud(true);
+    save();
+  }
+
+  function noTickets(){
+    SFX.denied();
+    const core = $('lotCore');
+    shake(core, 7, 240);
+    const hint = $('lotHint');
+    hint.innerHTML = '<b>籤不夠了</b> · 每 3 分鐘回復 1 籤';
+    clearTimeout(noTickets._t);
+    noTickets._t = setTimeout(() => {
+      hint.innerHTML = '按住蓄力，放開開籤 · <b>蓄力只影響演出，不動機率</b>';
+    }, 2600);
+  }
+
+  /* ---------- 長按蓄力 ---------- */
+  const CHARGE_MS = 1150;
+  let holdRaf = 0, holdT0 = 0, chargeSfx = null, imploder = 0, holding = false;
+
+  function chargeVisual(k){
+    const C = 471;
+    $('lotChargeArc').style.strokeDashoffset = C * (1-k);
+  }
+  function startHold(e){
+    if(busy || S.tickets < 1){ if(S.tickets < 1) noTickets(); return; }
+    if(e && e.preventDefault) e.preventDefault();
+    SFX.unlock();
+    holding = true; holdT0 = performance.now();
+    const core = $('lotCore');
+    core.classList.add('charging');
+    chargeSfx = SFX.charge();
+    imploder = setInterval(() => {
+      const k = Math.min(1, (performance.now()-holdT0)/CHARGE_MS);
+      const c = centerOf(core);
+      implode(c.x, c.y, 1 + Math.round(k*3), k > 0.85 ? '#fff3d6' : '#e9c281');
+    }, 90);
+    (function step(){
+      if(!holding) return;
+      const k = Math.min(1, (performance.now()-holdT0)/CHARGE_MS);
+      chargeVisual(k);
+      if(k >= 1) core.classList.add('charged');
+      holdRaf = requestAnimationFrame(step);
+    })();
+  }
+  function endHold(fire){
+    if(!holding) return;
+    holding = false;
+    cancelAnimationFrame(holdRaf);
+    clearInterval(imploder);
+    if(chargeSfx){ chargeSfx.stop(); chargeSfx = null; }
+    const k = Math.min(1, (performance.now()-holdT0)/CHARGE_MS);
+    const core = $('lotCore');
+    core.classList.remove('charging', 'charged');
+    chargeVisual(0);
+    if(fire) drawSingle(k);
+  }
+
+  /* ---------- 底部抽屜 ---------- */
+  const SHEETS = {
+    codex: { title:'圖鑑', en:'CODEX', build: buildCodex },
+    log:   { title:'抽籤紀錄', en:'HISTORY', build: buildLog },
+    rates: { title:'機率公示', en:'DROP RATES', build: buildRates },
+  };
+  function buildCodex(){
+    const total = POOL.length, got = POOL.filter(p => S.owned[p.id]).length;
+    let html = '<p class="codex-note">已收集 <b style="color:#e9c281">' + got + ' / ' + total + '</b>。' +
+      '重複抽到會自動折成星塵；星塵可以直接兌換還沒收到的獎品。</p><div class="codex-grid">';
+    TIERS.slice().reverse().forEach(t => {
+      byTier(t.id).forEach(p => {
+        const n = S.owned[p.id] || 0;
+        const canBuy = !n && S.shards >= t.exchange;
+        html += '<div class="codex-cell ' + (n ? 'owned' : 'locked') + '" style="color:' + t.color + '">' +
+          artSvg(p.art, 38) +
+          '<div class="codex-name">' + (n ? p.name : '???') + '</div>' +
+          '<div class="codex-cnt">' + (n ? '×' + n : t.name) + '</div>' +
+          (n ? '' : '<button class="codex-ex" ' + (canBuy ? '' : 'disabled') +
+            ' onclick="LOT.exchange(\'' + p.id + '\')">' + t.exchange + ' ✦</button>') +
+          '</div>';
+      });
+    });
+    return html + '</div>';
+  }
+  function buildLog(){
+    if(!S.log.length) return '<div class="log-empty">還沒有抽過。<br/>回去按住那顆核心試試看。</div>';
+    return S.log.map(l => {
+      const t = T[l.t], item = POOL.find(p => p.id === l.id) || { name:'—' };
+      const d = new Date(l.ts);
+      const time = String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + ' ' +
+        String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      return '<div class="log-row"><span class="log-tier" style="color:' + t.color + '">' + t.en + '</span>' +
+        '<span class="log-name">' + item.name + (l.n ? ' <b style="color:#ff5f86">NEW</b>' : '') + '</span>' +
+        '<span class="log-time">' + time + '</span></div>';
+    }).join('');
+  }
+  function buildRates(){
+    let html = '<p class="codex-note">以下是<b style="color:#e9c281">基礎機率</b>（不含保底）。十連不影響單張機率，只多一層「至少一張金焰」的保底。</p>';
+    TIERS.slice().reverse().forEach(t => {
+      html += '<div class="rate-row" style="color:' + t.color + '">' +
+        '<span class="rate-dot"></span>' +
+        '<span class="rate-name">' + t.name + '<em>' + t.en + '</em></span>' +
+        '<span class="rate-val">' + (t.rate*100).toFixed(1) + '%</span></div>';
+    });
+    html += '<p class="codex-note" style="margin-top:14px">保底規則：累積 ' + SOFT_PITY + ' 抽沒出星蝕後，' +
+      '每多抽一次機率再加 6%；第 ' + PITY_MAX + ' 抽必定出星蝕，出了就歸零。目前累積 ' +
+      '<b style="color:#e9c281">' + S.pity + '</b> 抽。</p>' +
+      '<p class="codex-note">把保底一起算進去，星蝕的<b style="color:#e9c281">綜合機率約 2.1%</b>' +
+      '（平均約 47 抽出一張），這是模擬 20 萬抽跑出來的數字。</p>' +
+      '<p class="codex-note">此頁為介面展示，機率與獎品皆為模擬資料。</p>';
+    return html;
+  }
+  function openSheet(kind){
+    const cfg = SHEETS[kind];
+    if(!cfg) return;
+    SFX.click();
+    $('lotSheetTitle').textContent = cfg.title;
+    $('lotSheetEn').textContent = cfg.en;
+    $('lotSheetBody').innerHTML = cfg.build();
+    $('lotSheetBody').scrollTop = 0;
+    $('lotSheet').classList.add('on');
+    openSheet.current = kind;
+  }
+  function closeSheet(e){
+    if(e && e.target !== e.currentTarget) return;
+    $('lotSheet').classList.remove('on');
+    SFX.soft();
+  }
+  function exchange(id){
+    const item = POOL.find(p => p.id === id);
+    if(!item || S.owned[id]) return;
+    const t = T[item.tier];
+    if(S.shards < t.exchange){ SFX.denied(); return; }
+    S.shards -= t.exchange;
+    S.owned[id] = 1;
+    S.log.unshift({ id:id, t:item.tier, ts:Date.now(), n:true, ex:true });
+    save();
+    SFX.chime(t.idx);
+    const fr = frameEl.getBoundingClientRect();
+    burst(fr.width/2, fr.height*0.55, 22, t.color, { dist:90, dur:640 });
+    floatText(fr.width/2, fr.height*0.5, '−' + t.exchange + ' ✦', '#9a92b8');
+    killfeed(t, item.name + '（兌換）', 0);
+    updateHud(true);
+    $('lotSheetBody').innerHTML = buildCodex();
+  }
+
+  /* ---------- 分頁列 ---------- */
+  const TABS = ['landing', 'lottery', 'historyLog'];
+  let currentTab = 'landing';
+
+  function moveIndicator(name){
+    const btn = document.querySelector('.tabbar-item[data-tab="' + name + '"]');
+    const ind = $('tabbarInd');
+    if(!btn || !ind) return;
+    const w = btn.offsetWidth * 0.5;
+    ind.style.width = w + 'px';
+    ind.style.transform = 'translateX(' + (btn.offsetLeft + btn.offsetWidth/2 - w/2) + 'px)';
+  }
+  function tab(name){
+    if(busy) return;
+    SFX.unlock(); SFX.click();
+    if(name === currentTab){
+      const el = document.querySelector('.screen[data-screen="' + name + '"]');
+      const sc = el && el.querySelector('.landing-scroll, .lot-sheet-body, .history-list');
+      if(sc) sc.scrollTo({ top:0, behavior:'smooth' });
+      return;
+    }
+    const dir = TABS.indexOf(name) > TABS.indexOf(currentTab) ? 1 : -1;
+    const next = document.querySelector('.screen[data-screen="' + name + '"]');
+    if(next && !REDUCED){
+      next.style.transform = 'translateX(' + (dir*34) + 'px)';
+      requestAnimationFrame(() => { next.style.transform = ''; });
+    }
+    goTo(name);
+  }
+  function syncTabs(screen){
+    const bar = $('tabbar');
+    const isTab = TABS.indexOf(screen) >= 0;
+    bar.hidden = !isTab;
+    bar.classList.toggle('dark', screen === 'lottery');
+    if(isTab){
+      currentTab = screen;
+      document.querySelectorAll('.tabbar-item').forEach(b => {
+        const on = b.dataset.tab === screen;
+        b.classList.toggle('on', on);
+        if(on){ b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
+      });
+      moveIndicator(screen);
+    }
+    if(screen === 'lottery'){
+      updateHud(false);
+      startTicking();
+      $('lotSheet').classList.remove('on');
+    }else{
+      stopTicking();
+      cinematic(false);
+    }
+  }
+
+  /* ---------- 啟動 ---------- */
+  function boot(){
+    load();
+    SFX.setMuted(!!S.muted);
+    $('lotMuteBtn').classList.toggle('muted', !!S.muted);
+    $('lotMuteBtn').textContent = S.muted ? '⃠' : '♪';
+    TABS.forEach(n => {
+      const el = document.querySelector('.screen[data-screen="' + n + '"]');
+      if(el) el.classList.add('has-tabbar');
+    });
+    updateHud(false);
+
+    const core = $('lotCore');
+    core.addEventListener('pointerdown', startHold);
+    core.addEventListener('pointerup', () => endHold(true));
+    core.addEventListener('pointerleave', () => endHold(false));
+    window.addEventListener('pointercancel', () => endHold(false));
+    // 鍵盤操作（Enter / Space）也能抽，用中等蓄力
+    core.addEventListener('click', e => { if(e.detail === 0) drawSingle(0.6); });
+    $('lotBtn1').addEventListener('click', () => { SFX.unlock(); drawSingle(0.45); });
+    $('lotBtn10').addEventListener('click', () => { SFX.unlock(); drawTen(); });
+    layerEl().addEventListener('pointerdown', () => { if(tapHandler) tapHandler(); });
+
+    window.addEventListener('resize', () => moveIndicator(currentTab));
+    document.addEventListener('visibilitychange', () => {
+      if(document.visibilityState === 'visible' && currentTab === 'lottery'){ updateHud(true); }
+    });
+    syncTabs('landing');
+  }
+
+  const api = {
+    tab, syncTabs, openSheet, closeSheet, exchange,
+    toggleMute(){
+      S.muted = !S.muted;
+      SFX.setMuted(S.muted);
+      $('lotMuteBtn').classList.toggle('muted', S.muted);
+      $('lotMuteBtn').textContent = S.muted ? '⃠' : '♪';
+      if(!S.muted) SFX.click();
+      save();
+    },
+  };
+  window.__lotSync = syncTabs;
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  return api;
+  })();
 </script>
 </body>
 </html>
