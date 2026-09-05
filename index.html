@@ -1756,6 +1756,7 @@
   let selectedMethod = null;
   let hasInput = false;
   let paidMode = false;
+  let isInternalUnlock = false;
   let uploadedChatText = null;
   let uploadedImages = [];
   let lastPersonaResult = null;
@@ -1802,7 +1803,7 @@
   const FREE_TEXT_LIMIT = 80000;
   const PAID_TEXT_LIMIT = 600000;
 
-  function currentTextLimit(){ return paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT; }
+  function currentTextLimit(){ return isInternalUnlock ? Infinity : (paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT); }
   function isOverTextLimit(){ return !!uploadedChatText && uploadedChatText.length > currentTextLimit(); }
 
   function renderLimitWarning(){
@@ -1875,7 +1876,8 @@
       });
     } else if(m==='file'){
       const limitLabel = currentTextLimit().toLocaleString();
-      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">選擇檔案（.txt，最大 5MB）</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
+      const fileBtnLabel = isInternalUnlock ? '選擇檔案（.txt，內部測試不限大小）' : '選擇檔案（.txt，最大 5MB）';
+      inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">'+fileBtnLabel+'</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
       const fileInput = document.getElementById('realFileInput');
       const nameEl = document.getElementById('fakeFileName');
       document.getElementById('fakeFileBtn').addEventListener('click', ()=> fileInput.click());
@@ -1890,7 +1892,7 @@
           fileInput.value = '';
           return;
         }
-        if(f.size > MAX_FILE_BYTES){
+        if(f.size > MAX_FILE_BYTES && !isInternalUnlock){
           nameEl.textContent = '⚠ 檔案大小 '+(f.size/1024/1024).toFixed(1)+'MB，超過 5MB 上限';
           nameEl.classList.add('error');
           uploadedChatText = null; hasInput = false; updateStartBtn();
@@ -2668,6 +2670,7 @@
   (function initInternalUnlock(){
     const params = new URLSearchParams(window.location.search);
     if(params.get('internal') !== 'chatpersona-team-preview-2026') return;
+    isInternalUnlock = true;
     const btn = document.getElementById('internalUnlockBtn');
     if(btn) btn.style.display = '';
   })();
