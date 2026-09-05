@@ -1427,6 +1427,13 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
+// 跟 index.html 裡 ?internal=chatpersona-team-preview-2026 用的是同一組通關密語
+// （不是 ADMIN_PASSWORD，那個絕對不能出現在前端程式碼裡）。這裡只用來讓「網站
+// 老闆自己內部測試/錄影片素材」的請求跳過付費版的字數上限，最壞情況就是有人
+// 拿到這組密語去跑一次超長文字分析、多花一點 Claude API 費用，不是帳號或金流
+// 安全性問題，風險等級跟前端那道門檻一致。
+const INTERNAL_TEST_KEY = 'chatpersona-team-preview-2026';
+
 // 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
 // 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
 // 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
@@ -1491,7 +1498,7 @@ async function handleRelationship(request, env, body) {
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
-  assertWithinTextLimit(text, PAID_TEXT_LIMIT);
+  if (body.internalTestKey !== INTERNAL_TEST_KEY) assertWithinTextLimit(text, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
