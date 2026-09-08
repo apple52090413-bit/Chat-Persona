@@ -1427,13 +1427,6 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
-// 跟 index.html 裡 ?internal=chatpersona-team-preview-2026 用的是同一組通關密語
-// （不是 ADMIN_PASSWORD，那個絕對不能出現在前端程式碼裡）。這裡只用來讓「網站
-// 老闆自己內部測試/錄影片素材」的請求跳過付費版的字數上限，最壞情況就是有人
-// 拿到這組密語去跑一次超長文字分析、多花一點 Claude API 費用，不是帳號或金流
-// 安全性問題，風險等級跟前端那道門檻一致。
-const INTERNAL_TEST_KEY = 'chatpersona-team-preview-2026';
-
 // 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
 // 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
 // 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
@@ -1491,14 +1484,19 @@ async function handlePersona(request, env, body) {
 }
 
 async function handleRelationship(request, env, body) {
-  const text = (body.text || '').trim();
+  let text = (body.text || '').trim();
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
   const milestones = Array.isArray(body.milestones)
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
-  if (body.internalTestKey !== INTERNAL_TEST_KEY) assertWithinTextLimit(text, PAID_TEXT_LIMIT);
+  // 超過付費版字數上限時不再直接擋下要求使用者自己縮短——改成只取前面這一段
+  // 繼續分析，但把「有沒有被截斷」這件事原封不動地回傳給前端，讓畫面明確告訴
+  // 使用者「這份分析只涵蓋前面一部分對話」，不能悄悄截斷卻讓人以為分析了全部內容。
+  const originalCharCount = text.length;
+  const contentTruncated = originalCharCount > PAID_TEXT_LIMIT;
+  if (contentTruncated) text = text.slice(0, PAID_TEXT_LIMIT);
   const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
@@ -1511,7 +1509,7 @@ async function handleRelationship(request, env, body) {
   // personAAliases/personBAliases 故意保留在回傳結果裡：前端會把整個結果存成
   // lastRelationshipDraft，之後呼叫 /refine-relationship 時會整包送回來，
   // 讓 handleRefine 能沿用同一份名單繼續遮蔽新生成的文字，不用重新問一次 AI。
-  return redactAliasesFromResult(
+  const finalResult = redactAliasesFromResult(
     result,
     [
       { aliases: result.personAAliases, replacement: '你' },
@@ -1519,6 +1517,12 @@ async function handleRelationship(request, env, body) {
     ],
     ['personAAliases', 'personBAliases']
   );
+  if (contentTruncated) {
+    finalResult.contentTruncated = true;
+    finalResult.analyzedCharCount = PAID_TEXT_LIMIT;
+    finalResult.originalCharCount = originalCharCount;
+  }
+  return finalResult;
 }
 
 async function handleRefine(request, env, body) {

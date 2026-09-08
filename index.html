@@ -1230,6 +1230,7 @@
       </div>
       <p class="chem-label" id="chemLabel"></p>
       <p class="basis-stat" id="relBasisStat"></p>
+      <p class="limit-warning" id="relTruncatedNotice" style="margin-top:8px;"></p>
 
       <p class="block-label">雙人個性側寫</p>
       <div class="profile-cards" id="profileCards"></div>
@@ -1803,7 +1804,7 @@
   const FREE_TEXT_LIMIT = 80000;
   const PAID_TEXT_LIMIT = 1200000;
 
-  function currentTextLimit(){ return isInternalUnlock ? Infinity : (paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT); }
+  function currentTextLimit(){ return paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT; }
   function isOverTextLimit(){ return !!uploadedChatText && uploadedChatText.length > currentTextLimit(); }
 
   function renderLimitWarning(){
@@ -1813,7 +1814,9 @@
       const limit = currentTextLimit();
       const len = uploadedChatText.length;
       if(paidMode){
-        warnEl.innerHTML = '⚠ 內容有 '+len.toLocaleString()+' 字，超過付費版 '+limit.toLocaleString()+' 字上限，請縮短內容（例如只保留其中一段時期的對話）再試一次。';
+        // 付費版超過上限不會擋下分析——後端會自動只分析前面這一段，這裡只是
+        // 先讓使用者知道「超出的部分不會被分析到」，不是必須解決才能繼續的錯誤。
+        warnEl.innerHTML = '⚠ 內容有 '+len.toLocaleString()+' 字，超過付費版 '+limit.toLocaleString()+' 字上限，將自動只分析前面 '+limit.toLocaleString()+' 字，超出的部分不會被分析到。';
       } else {
         warnEl.innerHTML = '⚠ 內容有 '+len.toLocaleString()+' 字，超過免費版 '+limit.toLocaleString()+' 字上限，免費版只能分析前面這一段。'+
           '<button type="button" class="link-btn" onclick="goToPayment()">改用付費版分析完整對話 →</button>';
@@ -1838,10 +1841,13 @@
     const consentOther = document.getElementById('consentOther').checked;
     const consentAnalyze = document.getElementById('consentAnalyze').checked;
     const consentTrain = document.getElementById('consentTrain').checked;
-    const overLimit = isOverTextLimit();
+    // 付費版超過字數上限不擋下——後端會自動截斷只分析前面一段，所以這裡不看
+    // overLimit；免費版仍然要擋（讓使用者去買付費版分析完整對話，而不是被
+    // 悄悄只分析一部分卻不自知）。
     if(paidMode){
-      startBtn.disabled = !(hasInput && consentOther && consentAnalyze) || overLimit;
+      startBtn.disabled = !(hasInput && consentOther && consentAnalyze);
     } else {
+      const overLimit = isOverTextLimit();
       startBtn.disabled = !(hasInput && selectedAge && consentOther && consentAnalyze && consentTrain) || overLimit;
     }
   }
@@ -2041,7 +2047,6 @@
           images,
           relationshipType: selectedRelationship || '曖昧',
           milestones: userMilestones,
-          internalTestKey: isInternalUnlock ? 'chatpersona-team-preview-2026' : undefined,
         });
         lastRelationshipDraft = validateRelationshipResult(result);
         stopLoadingGuards();
@@ -2151,6 +2156,19 @@
     document.getElementById('chemLabel').textContent = scoreLabel;
     const totalMsgs = d.totalMessages || 0;
     document.getElementById('relBasisStat').innerHTML = '本次分析基礎：<b>'+totalMsgs.toLocaleString()+'</b> 則訊息 · 關係類型：'+relKey;
+
+    // 內容超過付費版字數上限時，後端只會分析前面這一段——這裡明確告訴使用者
+    // 這份報告沒有涵蓋全部對話，避免誤以為分析了完整內容。
+    const truncNotice = document.getElementById('relTruncatedNotice');
+    if(truncNotice){
+      if(d.contentTruncated){
+        truncNotice.innerHTML = '⚠ 對話內容有 '+(d.originalCharCount||0).toLocaleString()+' 字，超過本次分析上限 '+(d.analyzedCharCount||0).toLocaleString()+' 字，這份報告只涵蓋前面這一段，之後的對話沒有被分析到。';
+        truncNotice.classList.add('show');
+      } else {
+        truncNotice.classList.remove('show');
+        truncNotice.innerHTML = '';
+      }
+    }
 
     const circumference = 364.4;
     const offset = circumference - (chemScore/100)*circumference;
