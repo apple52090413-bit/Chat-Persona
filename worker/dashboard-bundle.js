@@ -7,7 +7,7 @@
 
 // ---------- validate.js ----------
 const FREE_TEXT_LIMIT = 80000;
-const PAID_TEXT_LIMIT = 600000;
+const PAID_TEXT_LIMIT = 1200000;
 const MAX_IMAGES = 8;
 
 // 免費版／付費版超過字數上限時直接擋下，不做「只取最近一段」的靜默截斷 ——
@@ -34,7 +34,7 @@ function validateImages(images) {
 // ---------- anthropic.js ----------
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const REQUEST_TIMEOUT_MS = 240000; // 付費版最多要吃 60 萬字輸入＋較長的輸出，需要更多緩衝時間
+const REQUEST_TIMEOUT_MS = 300000; // 付費版最多要吃 120 萬字輸入＋較長的輸出，需要更多緩衝時間
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

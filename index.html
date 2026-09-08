@@ -921,7 +921,7 @@
         <p>Chat Persona 提供兩種服務：</p>
         <ul>
           <li><b>免費版</b>：分析單人聊天風格，最多可分析 80,000 字對話內容，包含人格類型、核心指標與高頻字詞。完全免費，不需付費、不需註冊帳號。</li>
-          <li><b>付費版「雙人關係深度報告」</b>：NT$99（一次性付費，非訂閱制），最多可分析 600,000 字雙人對話，內容包含雙方個性側寫、化學反應分數、衝突與互動指標分析、關係大事記時間軸（可針對事件追問 AI）、報告圖片匯出。</li>
+          <li><b>付費版「雙人關係深度報告」</b>：NT$99（一次性付費，非訂閱制），最多可分析 1,200,000 字雙人對話，內容包含雙方個性側寫、化學反應分數、衝突與互動指標分析、關係大事記時間軸（可針對事件追問 AI）、報告圖片匯出。</li>
         </ul>
         <p>本服務沒有會員帳號機制，每次分析都是獨立的單次服務，不會自動續扣款，也沒有除了上述之外的隱藏費用。</p>
       </div>
@@ -1761,7 +1761,7 @@
   let uploadedImages = [];
   let lastPersonaResult = null;
   let lastRelationshipDraft = null;
-  const MAX_FILE_BYTES = 5 * 1024 * 1024;
+  const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
   // 有些聊天紀錄匯出檔不是 UTF-8（例如 Windows 記事本存的 txt 常常是 UTF-16），
   // 硬用 UTF-8 解碼會把每個字都拆成亂碼，字數也會因此暴增到不合理的程度。
@@ -1801,7 +1801,7 @@
   }
   const MAX_IMAGES = 8;
   const FREE_TEXT_LIMIT = 80000;
-  const PAID_TEXT_LIMIT = 600000;
+  const PAID_TEXT_LIMIT = 1200000;
 
   function currentTextLimit(){ return isInternalUnlock ? Infinity : (paidMode ? PAID_TEXT_LIMIT : FREE_TEXT_LIMIT); }
   function isOverTextLimit(){ return !!uploadedChatText && uploadedChatText.length > currentTextLimit(); }
@@ -1876,7 +1876,7 @@
       });
     } else if(m==='file'){
       const limitLabel = currentTextLimit().toLocaleString();
-      const fileBtnLabel = isInternalUnlock ? '選擇檔案（.txt，內部測試不限大小）' : '選擇檔案（.txt，最大 5MB）';
+      const fileBtnLabel = isInternalUnlock ? '選擇檔案（.txt，內部測試不限大小）' : '選擇檔案（.txt，最大 10MB）';
       inputArea.innerHTML = '<div class="fake-upload"><input type="file" id="realFileInput" accept=".txt,text/plain" style="display:none"><div class="method-icon" style="font-size:24px;">⇪</div><button type="button" class="fake-upload-btn" id="fakeFileBtn">'+fileBtnLabel+'</button><div class="fake-filename" id="fakeFileName">尚未選擇檔案</div><div class="limit-hint">'+(paidMode ? '付費版最多可分析 '+limitLabel+' 字' : '免費版最多可分析 '+limitLabel+' 字，超過需要改用付費版')+'</div></div>';
       const fileInput = document.getElementById('realFileInput');
       const nameEl = document.getElementById('fakeFileName');
@@ -1893,7 +1893,7 @@
           return;
         }
         if(f.size > MAX_FILE_BYTES && !isInternalUnlock){
-          nameEl.textContent = '⚠ 檔案大小 '+(f.size/1024/1024).toFixed(1)+'MB，超過 5MB 上限';
+          nameEl.textContent = '⚠ 檔案大小 '+(f.size/1024/1024).toFixed(1)+'MB，超過 10MB 上限';
           nameEl.classList.add('error');
           uploadedChatText = null; hasInput = false; updateStartBtn();
           fileInput.value = '';
