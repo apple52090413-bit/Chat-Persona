@@ -1671,20 +1671,33 @@
   // const API_BASE = 'https://chat-persona-api.your-subdomain.workers.dev';
   const API_BASE = 'https://chat-persona-api.apple52090413.workers.dev';
 
-  async function callApi(path, payload){
+  // timeoutMs：手機把分頁切到背景一段時間再切回來時，瀏覽器常常會把還在等待中的
+  // fetch 直接悶掉（連 reject 都不會觸發），導致 await 永遠不會有結果——畫面停在
+  // 分析中，卡在原地，使用者只會看到「等一等就沒反應」，甚至誤以為整個網站壞掉、
+  // 白畫面。加上逾時保護，時間到了就主動判定失敗，讓既有的「重試一次」錯誤畫面
+  // 能被觸發，而不是無限期卡住沒有任何回應。
+  async function callApi(path, payload, timeoutMs){
     if(!API_BASE){
       const err = new Error('尚未設定後端 API 網址，請參考 worker/README.md 部署 Cloudflare Worker，並把網址填進 index.html 的 API_BASE。');
       throw err;
     }
+    const controller = new AbortController();
+    const timer = timeoutMs ? setTimeout(()=>controller.abort(), timeoutMs) : null;
     let res;
     try{
       res = await fetch(API_BASE + path, {
         method:'POST',
         headers:{ 'content-type':'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
     } catch(networkErr){
+      if(networkErr.name === 'AbortError'){
+        throw new Error('等待分析結果的時間過長（可能是網路不穩，或分頁被切到背景太久），請重新整理頁面後再試一次。');
+      }
       throw new Error('連不到分析伺服器，請確認網路連線或 API_BASE 網址是否正確。');
+    } finally {
+      if(timer) clearTimeout(timer);
     }
     let data = {};
     try{ data = await res.json(); } catch{ /* 非 JSON 回應時 data 保持空物件 */ }
@@ -2039,7 +2052,7 @@
     try{
       if(!paidMode){
         const images = await collectImagePayload();
-        const result = await callApi('/analyze-persona', { text: uploadedChatText, images });
+        const result = await callApi('/analyze-persona', { text: uploadedChatText, images }, 360000);
         lastPersonaResult = validatePersonaResult(result);
         stopLoadingGuards();
         fill.style.width = '100%';
@@ -2051,13 +2064,13 @@
           images,
           relationshipType: selectedRelationship || '曖昧',
           milestones: userMilestones,
-        });
+        }, 360000);
         lastRelationshipDraft = validateRelationshipResult(result);
         stopLoadingGuards();
         fill.style.width = '100%';
         setTimeout(()=>{ prepareAiQuestions(); goTo('aiAsk'); }, 300);
       } else {
-        const refined = await callApi('/refine-relationship', { draft: lastRelationshipDraft, answers: aiAnswers });
+        const refined = await callApi('/refine-relationship', { draft: lastRelationshipDraft, answers: aiAnswers }, 360000);
         lastRelationshipDraft = Object.assign({}, lastRelationshipDraft, refined);
         stopLoadingGuards();
         fill.style.width = '100%';
@@ -2380,7 +2393,7 @@
         question: val,
         personAAliases: (lastRelationshipDraft && lastRelationshipDraft.personAAliases) || [],
         personBAliases: (lastRelationshipDraft && lastRelationshipDraft.personBAliases) || [],
-      });
+      }, 60000);
       replyText = data.reply || aiReplyFallback(val, '伺服器沒有回傳內容');
     } catch(err){
       replyText = aiReplyFallback(val, (err && err.message) || '未知錯誤');
