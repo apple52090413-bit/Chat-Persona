@@ -689,6 +689,10 @@
     border-radius:10px; padding:8px 10px; font-size:12px; color:var(--ink); font-family:"Noto Sans TC",sans-serif;
   }
   .ai-ask-item textarea::placeholder{ color:var(--ink-dim); }
+  /* 手機上輸入答案時，跳出的鍵盤常常會把畫面下半部（含這顆按鈕）蓋住，
+     使用者往下捲很多才找得到，甚至誤以為沒有下一步——position:sticky 讓
+     按鈕在捲動時一直貼在目前可視範圍的底部，不用捲到最底也看得到。*/
+  .ai-ask-submit{ position:sticky; bottom:8px; z-index:3; }
 
   .upsell-card{
     margin-top:24px; padding:18px; border-radius:18px; border:1px solid rgba(204,154,92,0.45);
@@ -1207,7 +1211,7 @@
       <h2 class="section-title">補充這些，<br/>報告會更準</h2>
       <p class="ai-ask-note">這些是 AI 從對話裡看不出來、但想多了解的地方，選填即可，跳過也沒關係。</p>
       <div class="ai-ask-list" id="aiAskList"></div>
-      <button class="btn btn-primary btn-full" style="margin-top:18px;" onclick="submitAiAnswers()">生成完整報告 →</button>
+      <button class="btn btn-primary btn-full ai-ask-submit" style="margin-top:18px;" onclick="submitAiAnswers()">生成完整報告 →</button>
     </div>
   </section>
 
