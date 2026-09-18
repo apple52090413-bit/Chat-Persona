@@ -192,11 +192,12 @@ async function callClaudePlain({ apiKey, model, system, messages, maxTokens }) {
 const SYSTEM_PROMPT_BASE = `你是「聊天人格分析」網站背後的分析引擎。你的任務是根據使用者提供的真實聊天紀錄，做語氣、互動模式與關係動態的分析。規則：
 1. 全程使用繁體中文（台灣用語）。
 2. 【隱私保護，最高優先，任何情況都不能違反】對話原文裡如果出現使用者本人或對方的真實姓名、暱稱、綽號、帳號、電話、Email、地址、學校或公司全名等可以直接指認身份的資訊，你回傳的所有文字欄位（包含摘要、洞察、事件描述、原文摘錄等）一律不能原樣照抄這些身份資訊。提到使用者本人永遠只能稱「你」，提到對話中的另一方永遠只能稱「對方」——即使原文裡雙方是用真實姓名、綽號或暱稱互相稱呼，你也絕對不能把那個名字寫進回覆的任何欄位裡，包含看起來像是「原文引用」的欄位也一樣，要先換成「你」/「對方」再寫進去。如果原文裡有其他具體到可以指認身份的細節（例如完整地址、特定門牌、電話號碼、罕見的地標全名），也要用模糊、概括的方式改寫（例如「住的地方附近」「一間咖啡廳」），但不影響你對事件經過、情緒、互動模式本身的描述與解讀——你分析的是「發生了什麼、代表什麼意義」，不是要留存對話雙方的身份細節。
-3. 分析必須基於你實際讀到的文字內容，不能憑空捏造與內容矛盾的細節；文字沒有明確資訊的地方（例如確切訊息則數），可以合理估算。
-4. 語氣自然、像懂心理學又懂聊天的朋友在幫忙解讀，不要說教、不要條列免責聲明、不要提到「我是AI」或「這是示範」。
-5. 給分數時要根據實際觀察到的傾向給出有區分度的數字，不要每項都給 50 附近的安全值。
-6. 一律透過提供的工具（tool use）回傳結構化結果，不要在工具呼叫之外輸出任何文字。
-7. 如果對話內容過短或資訊不足，仍要盡力給出合理推論，並讓數字/描述反映內容確實較單薄的狀況，不要因此拒絕分析。`;
+3. 【禁止幻覺，最高優先】你只能描述、解讀對話原文裡實際存在的內容，絕對不能編造原文中沒有出現的具體事件、對話內容、引言、時間點或情節（例如原文根本沒提到「吵架」，就不能編出一段吵架的敘述）。唯一允許「估算」的情況，是無法從文字精確得知的統計型數字（例如確切訊息則數、大略的情緒比例），而且估算時要盡量貼近你實際觀察到的資料量與密度，不能隨意亂猜一個好看的數字；除此之外的所有敘述（摘要、洞察、時間軸事件描述、原文摘錄等）都必須有原文根據，不確定就寫得保守、籠統一點，也不要假裝很確定。
+4. 【時間相關的描述必須符合對話原文實際呈現的時間跨度，不能憑空套用「週」「月」等長期框架】仔細判斷這段對話實際涵蓋的真實時間長度：如果原文有時間戳記或日期，以那個為準；如果完全沒有時間資訊，且對話內容看起來像是一次性、短時間內（例如同一次聊天session）的往來，就不能假裝這是橫跨數週或數月的關係史。所有需要「依時間分段」的欄位（例如 monthLabels、timeline 的 date）都要反映這個判斷：真實時間跨度夠長（有證據看得出橫跨數週/數月）才用「第1週」「3月」這類週期性標籤；如果對話明顯是短時間內的單次往來，改用不隱含長期跨度的描述方式，例如依對話發展的先後順序分段（「對話開頭」「中段」「尾聲」，或依訊息量平均分成幾段），絕對不要因為工具規格要求固定分成幾段，就硬套一個跟實際時間跨度矛盾的「第一週、第二週」說法。
+5. 語氣自然、像懂心理學又懂聊天的朋友在幫忙解讀，不要說教、不要條列免責聲明、不要提到「我是AI」或「這是示範」。
+6. 給分數時要根據實際觀察到的傾向給出有區分度的數字，不要每項都給 50 附近的安全值。
+7. 一律透過提供的工具（tool use）回傳結構化結果，不要在工具呼叫之外輸出任何文字。
+8. 如果對話內容過短或資訊不足，仍要盡力給出合理推論，並讓數字/描述反映內容確實較單薄的狀況，不要因此拒絕分析，但也不能為了填滿欄位而編造內容中沒有的細節——寧可寫得簡短、籠統，也不要編故事。`;
 
 function imageBlocks(images) {
   return images.map(img => ({
@@ -251,7 +252,7 @@ const PERSONA_TOOL = {
         items: { type: 'string' },
         minItems: 6,
         maxItems: 6,
-        description: '對應下面兩個趨勢陣列的 6 個時間標籤；若對話中看得出實際日期就用真實月份（例如「3月」），看不出來就用「第1段」～「第6段」等相對描述',
+        description: '對應下面兩個趨勢陣列的 6 個時間標籤。先判斷對話實際涵蓋的真實時間長度：對話中看得出明確日期、且真的橫跨數週或數月，才用真實月份或「第1週」～「第6週」這類週期性標籤；如果看不出日期、或對話明顯是短時間內的一次性往來（例如同一次聊天session），絕對不能編造「第1週」～「第6週」這種暗示長期關係的標籤，改用「開頭」「前段」「中段」「後段」「尾聲」等依對話發展先後順序的描述，或依訊息量平均分段的說法（例如「前1/6」），如實反映實際時間跨度很短的狀況',
       },
       monthlySentenceCounts: {
         type: 'array',
@@ -277,13 +278,18 @@ const PERSONA_TOOL = {
   },
 };
 
-function buildPersonaMessages({ text, images }) {
+function buildPersonaMessages({ text, images, selfLabel }) {
   const content = [];
   if (images.length) {
     content.push(...imageBlocks(images));
     content.push({ type: 'text', text: '以上是聊天截圖，請先在心裡辨識畫面中的對話文字，再依照下面的指示分析，不用把逐字稿寫出來。' });
   }
-  const instructions = `你會看到一段使用者提供的真實聊天紀錄。請分析「使用者本人」在這段對話中的聊天風格（如果文字裡有明確的說話者標示，例如「我：」「他：」，「我」就是使用者本人；沒有明確標示時，以看起來主動貼上這份紀錄、視角在對話中比較主動的一方為準）。
+  const selfLabelLine = selfLabel
+    ? `使用者指定：對話中稱呼／名字是「${selfLabel}」的那一位就是使用者本人，其他人都算「對方」，請直接採用，不要自己重新判斷或懷疑。\n\n`
+    : '';
+  const instructions = `你會看到一段使用者提供的真實聊天紀錄。請分析「使用者本人」在這段對話中的聊天風格。${selfLabel ? '' : '（如果文字裡有明確的說話者標示，例如「我：」「他：」，「我」就是使用者本人；沒有明確標示、又沒有下面的指定時，以看起來主動貼上這份紀錄、視角在對話中比較主動的一方為準——但這只是不得已的猜測，猜錯視角是常見的誤判來源，能確定就不要亂猜。）'}
+
+${selfLabelLine}
 
 六種人格類型：
 1. 傾聽型 - 溫柔且擅長傾聽
@@ -326,7 +332,7 @@ const moodSchema = {
 const timelineEventSchema = {
   type: 'object',
   properties: {
-    date: { type: 'string', description: '事件發生的時間點描述，若對話中有日期就用實際日期/月份，否則用「約第2週」等相對描述' },
+    date: { type: 'string', description: '事件發生的時間點描述。若對話中有明確日期就用實際日期/月份；沒有日期時，只有在對話真的看得出橫跨較長時間時才用「約第2週」這類相對描述，如果對話明顯是短時間內的一次性往來，改用「對話開頭」「對話中段」等不暗示長期跨度的描述，不要編造一個跟實際時間跨度矛盾的說法' },
     title: { type: 'string', description: '一句話標題，例如「第一次單獨出去，話題變得更私人」' },
     summary: { type: 'string', description: '具體描述當時對話內容發生了什麼' },
     interpretation: { type: 'string', description: '對這個事件的解讀，說明代表的意義' },
@@ -367,8 +373,8 @@ const RELATIONSHIP_TOOL = {
       conflict: {
         type: 'object',
         properties: {
-          frequency: { type: 'string', description: '平均每月衝突次數，例如 "1.2"' },
-          unit: { type: 'string', description: '例如 "次爭吵／月"' },
+          frequency: { type: 'string', description: '衝突發生的頻率數字，例如 "1.2"。只有在對話真的橫跨數週或數月、算「每月」才有意義時才用月為單位；如果對話明顯是短時間內的一次性往來，改用跟實際時間跨度相符的單位（並同步調整 unit 欄位），例如「這次對話中」的次數，不要為了套用「次/月」硬換算出一個不符合實際時間跨度的數字' },
+          unit: { type: 'string', description: '跟 frequency 搭配的單位，例如 "次爭吵／月"；對話時間跨度很短時改用 "次／這次對話" 之類符合實際狀況的說法' },
           tags: {
             type: 'array',
             items: { type: 'object', properties: { label: { type: 'string' }, count: { type: 'integer' } }, required: ['label', 'count'] },
@@ -398,7 +404,10 @@ const RELATIONSHIP_TOOL = {
       },
       stickerMoodA: moodSchema,
       stickerMoodB: moodSchema,
-      monthLabels: { type: 'array', items: { type: 'string' }, minItems: 6, maxItems: 6 },
+      monthLabels: {
+        type: 'array', items: { type: 'string' }, minItems: 6, maxItems: 6,
+        description: '對應下面趨勢陣列的 6 個時間標籤。先判斷這段對話實際涵蓋的真實時間長度：真的橫跨數週或數月才用真實月份或「第1週」～「第6週」這類週期性標籤；如果看不出日期、或對話明顯是短時間內的一次性往來，不能編造「第1週」～「第6週」這種暗示長期關係的標籤，改用「開頭」「前段」「中段」「後段」「尾聲」等依對話發展先後順序的描述，如實反映實際時間跨度很短的狀況',
+      },
       monthlyMessageCounts: { type: 'array', items: { type: 'integer', minimum: 0 }, minItems: 6, maxItems: 6 },
       temperatureTrend: {
         type: 'array',
@@ -442,7 +451,7 @@ const RELATIONSHIP_TOOL = {
   },
 };
 
-function buildRelationshipMessages({ text, images, relationshipType, milestones }) {
+function buildRelationshipMessages({ text, images, relationshipType, milestones, selfLabel }) {
   const content = [];
   if (images.length) {
     content.push(...imageBlocks(images));
@@ -453,7 +462,10 @@ function buildRelationshipMessages({ text, images, relationshipType, milestones 
     milestoneBlock = '\n\n使用者另外標記了以下他自己覺得重要的時刻，請在分析時特別去對話內容中比對這些時間點附近實際發生了什麼，並在 milestoneInterpretations 中依序給出摘要、解讀、後續影響（index 對應下面清單的序號，從 0 開始，順序需完全一致）：\n' +
       milestones.map((m, i) => i + '. 日期：' + m.date + '　備註：' + m.note).join('\n');
   }
-  const instructions = `你會看到使用者提供的一段「兩人之間」的真實聊天紀錄，使用者選擇的關係類型是：${relationshipType}。${milestoneBlock}
+  const selfLabelBlock = selfLabel
+    ? `\n\n使用者指定：對話中稱呼／名字是「${selfLabel}」的那一位就是使用者本人（也就是下面所說的「你」／personA），另一位是「對方」（personB），請直接採用，不要自己重新判斷或懷疑。`
+    : '\n\n（使用者沒有指定誰是誰，如果文字裡沒有明確的「我：」「你：」這類標示，只能就對話內容自行判斷哪一方是使用者本人——這只是不得已的猜測，猜錯視角是常見的誤判來源，能確定就不要亂猜，判斷依據可以參考語氣、是誰主動貼出這份紀錄等線索。）';
+  const instructions = `你會看到使用者提供的一段「兩人之間」的真實聊天紀錄，使用者選擇的關係類型是：${relationshipType}。${milestoneBlock}${selfLabelBlock}
 
 請完整分析這段對話，包含：
 - 雙方（你＝訊息中我方；對方＝另一方）的個性側寫
@@ -469,7 +481,10 @@ function buildRelationshipMessages({ text, images, relationshipType, milestones 
 
 請呼叫 submit_relationship_analysis 工具回傳結果。全部使用繁體中文，語氣像朋友幫忙解讀對話一樣自然，不要客套或說教，數字要有區分度、符合實際觀察。
 
-再次提醒：下面的對話原文裡不管雙方實際上是用什麼真實姓名或綽號互相稱呼，你回傳的每一個欄位（personA/personB 的描述、conflict、timeline 的 summary/interpretation/relevantExcerpt、milestoneInterpretations、personalInsight、overallInsight 全部包含在內）提到使用者本人一律寫「你」、提到另一方一律寫「對方」，絕對不能把對話中出現的真實姓名或綽號原封不動寫進任何欄位。${conversationBlock(text)}`;
+再次提醒：
+1. 下面的對話原文裡不管雙方實際上是用什麼真實姓名或綽號互相稱呼，你回傳的每一個欄位（personA/personB 的描述、conflict、timeline 的 summary/interpretation/relevantExcerpt、milestoneInterpretations、personalInsight、overallInsight 全部包含在內）提到使用者本人一律寫「你」、提到另一方一律寫「對方」，絕對不能把對話中出現的真實姓名或綽號原封不動寫進任何欄位。
+2. timeline、milestoneInterpretations 裡的每個事件都必須是原文裡真的看得出來的事，不能為了湊到 4-6 個事件就編造原文沒有的情節或對話內容。
+3. 先判斷這段對話實際涵蓋的真實時間長度再決定怎麼描述時間：對話明顯是短時間內的一次性往來時，monthLabels、timeline 的 date 都不能編造「第一週」「第二週」這種暗示長期關係的說法，conflict.frequency/unit 也不能硬套「次/月」，要如實反映實際時間跨度很短的狀況（見上面各欄位說明的具體處理方式）。${conversationBlock(text)}`;
   content.push({ type: 'text', text: instructions });
   return [{ role: 'user', content }];
 }
@@ -1427,6 +1442,19 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
+// AI 對「這個詞出現幾次」的估計常常不準（LLM 天生不擅長逐字精確計數，尤其是
+// 長對話），使用者實測也反映次數跟用詞對不太起來。這裡不採信 AI 自己給的
+// count，只信任 AI 挑出「哪些詞值得列出來」，次數一律直接在實際分析到的原文
+// 裡數出真正出現幾次；如果 AI 幻覺出一個原文裡根本沒出現的詞，count 會是 0，
+// 直接濾掉，不會顯示假數字給使用者看。
+function correctKeywordCounts(text, keywords) {
+  if (!Array.isArray(keywords)) return keywords;
+  return keywords
+    .map(k => ({ word: k && k.word, count: (k && k.word) ? text.split(k.word).length - 1 : 0 }))
+    .filter(k => k.word && k.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
+
 // 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
 // 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
 // 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
@@ -1463,14 +1491,16 @@ async function callClaudeToolLogged(env, { endpoint, orderId, ...params }) {
 async function handlePersona(request, env, body) {
   const text = (body.text || '').trim();
   const images = validateImages(body.images);
+  const selfLabel = typeof body.selfLabel === 'string' ? body.selfLabel.trim().slice(0, 40) : '';
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, FREE_TEXT_LIMIT);
-  const messages = buildPersonaMessages({ text, images });
+  const messages = buildPersonaMessages({ text, images, selfLabel });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 3000,
   });
+  result.keywords = correctKeywordCounts(text, result.keywords);
   // 保險層：不管上面的 insight 等欄位有沒有照 prompt 指示避開真實姓名，
   // 這裡都強制把 AI 回報的稱呼換成「對方」，不依賴 AI 自己是否遵守。
   // otherPartyAliases 故意保留在回傳結果裡（不刪掉）——前端不會特別去顯示
@@ -1487,6 +1517,7 @@ async function handleRelationship(request, env, body) {
   let text = (body.text || '').trim();
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
+  const selfLabel = typeof body.selfLabel === 'string' ? body.selfLabel.trim().slice(0, 40) : '';
   const milestones = Array.isArray(body.milestones)
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
@@ -1497,12 +1528,13 @@ async function handleRelationship(request, env, body) {
   const originalCharCount = text.length;
   const contentTruncated = originalCharCount > PAID_TEXT_LIMIT;
   if (contentTruncated) text = text.slice(0, PAID_TEXT_LIMIT);
-  const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
+  const messages = buildRelationshipMessages({ text, images, relationshipType, milestones, selfLabel });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 14000,
   });
+  result.keywords = correctKeywordCounts(text, result.keywords);
   // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
   // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——
   // 這就是使用者反映「對方名字直接跑出來」這個問題的實際防線。

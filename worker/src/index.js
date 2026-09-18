@@ -45,6 +45,19 @@ function model(env) {
   return env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 }
 
+// AI 對「這個詞出現幾次」的估計常常不準（LLM 天生不擅長逐字精確計數，尤其是
+// 長對話），使用者實測也反映次數跟用詞對不太起來。這裡不採信 AI 自己給的
+// count，只信任 AI 挑出「哪些詞值得列出來」，次數一律直接在實際分析到的原文
+// 裡數出真正出現幾次；如果 AI 幻覺出一個原文裡根本沒出現的詞，count 會是 0，
+// 直接濾掉，不會顯示假數字給使用者看。
+function correctKeywordCounts(text, keywords) {
+  if (!Array.isArray(keywords)) return keywords;
+  return keywords
+    .map(k => ({ word: k && k.word, count: (k && k.word) ? text.split(k.word).length - 1 : 0 }))
+    .filter(k => k.word && k.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
+
 // 記錄這次呼叫花了多少 token，方便之後在後台看實際花費趨勢。
 // 這裡刻意不讓記錄失敗擋住使用者拿到分析結果 —— DB 沒設定、或寫入失敗，
 // 頂多就是這一筆沒記到，不應該讓整個請求跟著失敗。
@@ -81,14 +94,16 @@ async function callClaudeToolLogged(env, { endpoint, orderId, ...params }) {
 async function handlePersona(request, env, body) {
   const text = (body.text || '').trim();
   const images = validateImages(body.images);
+  const selfLabel = typeof body.selfLabel === 'string' ? body.selfLabel.trim().slice(0, 40) : '';
   if (!text && images.length === 0) throw badRequest('請提供文字內容或圖片');
   assertWithinTextLimit(text, FREE_TEXT_LIMIT);
-  const messages = buildPersonaMessages({ text, images });
+  const messages = buildPersonaMessages({ text, images, selfLabel });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-persona',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: PERSONA_TOOL, maxTokens: 3000,
   });
+  result.keywords = correctKeywordCounts(text, result.keywords);
   // 保險層：不管上面的 insight 等欄位有沒有照 prompt 指示避開真實姓名，
   // 這裡都強制把 AI 回報的稱呼換成「對方」，不依賴 AI 自己是否遵守。
   // otherPartyAliases 故意保留在回傳結果裡（不刪掉）——前端不會特別去顯示
@@ -105,6 +120,7 @@ async function handleRelationship(request, env, body) {
   let text = (body.text || '').trim();
   const images = validateImages(body.images);
   const relationshipType = typeof body.relationshipType === 'string' ? body.relationshipType : '曖昧';
+  const selfLabel = typeof body.selfLabel === 'string' ? body.selfLabel.trim().slice(0, 40) : '';
   const milestones = Array.isArray(body.milestones)
     ? body.milestones.slice(0, 20).filter(m => m && typeof m.date === 'string' && typeof m.note === 'string')
     : [];
@@ -115,12 +131,13 @@ async function handleRelationship(request, env, body) {
   const originalCharCount = text.length;
   const contentTruncated = originalCharCount > PAID_TEXT_LIMIT;
   if (contentTruncated) text = text.slice(0, PAID_TEXT_LIMIT);
-  const messages = buildRelationshipMessages({ text, images, relationshipType, milestones });
+  const messages = buildRelationshipMessages({ text, images, relationshipType, milestones, selfLabel });
   const result = await callClaudeToolLogged(env, {
     endpoint: 'analyze-relationship',
     apiKey: env.ANTHROPIC_API_KEY, model: model(env),
     system: SYSTEM_PROMPT_BASE, messages, tool: RELATIONSHIP_TOOL, maxTokens: 14000,
   });
+  result.keywords = correctKeywordCounts(text, result.keywords);
   // 保險層：不管上面每個欄位有沒有照 prompt 指示避開真實姓名，這裡都強制把
   // AI 回報的稱呼換成「你」/「對方」，不依賴 AI 自己是否遵守指示 ——
   // 這就是使用者反映「對方名字直接跑出來」這個問題的實際防線。

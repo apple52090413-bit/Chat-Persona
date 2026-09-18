@@ -993,6 +993,11 @@
       </div>
       <div class="limit-warning" id="textLimitWarning"></div>
 
+      <div id="selfLabelFieldWrap">
+        <p class="field-label">對話裡哪一個是你自己？ <span class="block-note">（選填，填了 AI 判斷視角會更準；不填的話 AI 會自動判斷）</span></p>
+        <input type="text" id="selfLabelInput" class="milestone-note-input" style="width:100%;" placeholder="例如：對話紀錄裡你的暱稱、LINE 顯示名稱...">
+      </div>
+
       <div id="ageFieldWrap">
         <p class="field-label">你的年齡</p>
         <div class="age-pills" id="agePills">
@@ -2052,18 +2057,21 @@
     try{
       if(!paidMode){
         const images = await collectImagePayload();
-        const result = await callApi('/analyze-persona', { text: uploadedChatText, images }, 360000);
+        const selfLabel = document.getElementById('selfLabelInput').value.trim();
+        const result = await callApi('/analyze-persona', { text: uploadedChatText, images, selfLabel }, 360000);
         lastPersonaResult = validatePersonaResult(result);
         stopLoadingGuards();
         fill.style.width = '100%';
         setTimeout(()=>{ goTo('reveal'); prepareCard(); }, 300);
       } else if(loadingPhase==='initial'){
         const images = await collectImagePayload();
+        const selfLabel = document.getElementById('selfLabelInput').value.trim();
         const result = await callApi('/analyze-relationship', {
           text: uploadedChatText,
           images,
           relationshipType: selectedRelationship || '曖昧',
           milestones: userMilestones,
+          selfLabel,
         }, 360000);
         lastRelationshipDraft = validateRelationshipResult(result);
         stopLoadingGuards();
@@ -2576,6 +2584,7 @@
     ageBlockMsg.classList.remove('show');
     document.querySelectorAll('.consent-item input[type="checkbox"]').forEach(c=>c.checked=false);
     inputArea.innerHTML = '<div class="input-hint">先選擇上面其中一種方式</div>';
+    document.getElementById('selfLabelInput').value = '';
     updateStartBtn();
     goTo('landing');
   }
