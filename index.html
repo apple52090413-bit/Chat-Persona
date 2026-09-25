@@ -1823,6 +1823,11 @@
     return best || { enc:'utf-8', text:'', ratio:0 };
   }
   const MAX_IMAGES = 8;
+  // Claude 的 vision API 只接受這四種圖片格式；iPhone 用相機拍的照片預設是 HEIC，
+  // 之前沒有擋在前端，選了 HEIC 之後要等分析跑到一半才會被 Anthropic 那邊拒絕，
+  // 跳出一長串英文/JSON 的原始錯誤訊息給使用者看，看起來像「圖片格式不對」但
+  // 完全不知道問題出在哪、也不知道怎麼解決。現在直接在選檔案的當下就擋掉。
+  const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
   const FREE_TEXT_LIMIT = 80000;
   const PAID_TEXT_LIMIT = 1200000;
 
@@ -1969,21 +1974,25 @@
           });
         });
       }
-      function updateImgStatus(){
+      function updateImgStatus(warningText){
         renderThumbs();
-        if(uploadedImages.length === 0){
+        if(warningText){
+          nameEl.textContent = warningText;
+          nameEl.classList.add('error');
+        } else if(uploadedImages.length === 0){
           nameEl.textContent = '尚未選擇圖片';
           nameEl.classList.remove('error');
-          hasInput = false;
         } else {
           nameEl.textContent = '已選擇 '+uploadedImages.length+' 張截圖';
           nameEl.classList.remove('error');
-          hasInput = true;
         }
+        hasInput = uploadedImages.length > 0;
         updateStartBtn();
       }
       imgInput.addEventListener('change', ()=>{
-        const files = Array.from(imgInput.files).filter(f=>f.type.startsWith('image/'));
+        const allSelected = Array.from(imgInput.files);
+        const files = allSelected.filter(f=>SUPPORTED_IMAGE_TYPES.includes(f.type));
+        const unsupported = allSelected.filter(f=>!SUPPORTED_IMAGE_TYPES.includes(f.type));
         const room = MAX_IMAGES - uploadedImages.length;
         if(room <= 0){
           nameEl.textContent = '⚠ 最多只能選擇 '+MAX_IMAGES+' 張圖片';
@@ -1993,12 +2002,14 @@
         }
         const toAdd = files.slice(0, room);
         toAdd.forEach(f=> uploadedImages.push({ file:f, url:URL.createObjectURL(f) }));
-        if(files.length > toAdd.length){
-          nameEl.textContent = '⚠ 最多只能選擇 '+MAX_IMAGES+' 張，已加入前 '+toAdd.length+' 張';
-          nameEl.classList.add('error');
+        let warningText = null;
+        if(unsupported.length){
+          warningText = '⚠ '+unsupported.length+' 張圖片格式不支援（僅支援 JPG／PNG／GIF／WebP；iPhone「拍照」存的 HEIC 格式不支援，請改選「螢幕截圖」，或到設定 App →相機→格式，改成「最相容」）'+(toAdd.length ? '，已加入其餘 '+toAdd.length+' 張' : '');
+        } else if(files.length > toAdd.length){
+          warningText = '⚠ 最多只能選擇 '+MAX_IMAGES+' 張，已加入前 '+toAdd.length+' 張';
         }
         imgInput.value = '';
-        updateImgStatus();
+        updateImgStatus(warningText);
       });
     }
   }

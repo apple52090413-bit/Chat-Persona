@@ -16,9 +16,15 @@ export function assertWithinTextLimit(text, limit) {
   }
 }
 
+// Claude 的 vision API 只接受這四種圖片格式；前端已經會擋掉 HEIC 等不支援的
+// 格式並提示使用者，這裡是第二道防線——萬一前端檢查被繞過（例如直接呼叫
+// API），也不要把不支援的格式送去給 Anthropic，換來一長串原始的英文/JSON
+// 錯誤訊息，直接在這裡濾掉即可。
+const SUPPORTED_IMAGE_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 export function validateImages(images) {
   if (!Array.isArray(images)) return [];
   return images
-    .filter(img => img && typeof img.data === 'string' && typeof img.mediaType === 'string' && img.mediaType.startsWith('image/'))
+    .filter(img => img && typeof img.data === 'string' && typeof img.mediaType === 'string' && SUPPORTED_IMAGE_MEDIA_TYPES.includes(img.mediaType))
     .slice(0, MAX_IMAGES);
 }
